@@ -10929,6 +10929,8 @@ class MemoryEngine(MemoryEngineInterface):
             content_dict["tags"] = tags
         if retain_params.get("observation_scopes") is not None:
             content_dict["observation_scopes"] = retain_params["observation_scopes"]
+        if retain_params.get("observation_scopes_param") is not None:
+            content_dict["observation_scopes_param"] = retain_params["observation_scopes_param"]
 
         strategy = retain_params.get("strategy")
 

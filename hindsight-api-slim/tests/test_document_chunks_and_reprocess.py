@@ -10,7 +10,6 @@ import pytest_asyncio
 
 from hindsight_api.api import create_app
 
-
 # ── Fixtures ──
 
 
@@ -184,6 +183,49 @@ async def test_reprocess_document(memory, request_context):
         assert "operation_id" in result
         assert "items_count" in result
         assert result["items_count"] == 1
+    finally:
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
+async def test_reprocess_document_forwards_observation_scope_params(memory, request_context, monkeypatch):
+    """Reprocessing reuses both the observation strategy and its whitelist."""
+    bank_id = f"test_reprocess_scope_params_{datetime.now(timezone.utc).timestamp()}"
+    try:
+        await memory.retain_batch_async(
+            bank_id=bank_id,
+            contents=[
+                {
+                    "content": "Alice works on the Atlas project.",
+                    "document_id": "doc-reprocess-scoped",
+                    "tags": ["project:atlas", "source:reprocess-test"],
+                    "observation_scopes": "combined",
+                    "observation_scopes_param": {"tag_key_whitelist": ["project"]},
+                }
+            ],
+            request_context=request_context,
+        )
+
+        captured = {}
+
+        async def _capture_submit(bank_id_arg, contents, *, strategy, request_context):
+            captured["bank_id"] = bank_id_arg
+            captured["contents"] = contents
+            captured["strategy"] = strategy
+            captured["request_context"] = request_context
+            return {"operation_id": "captured", "items_count": len(contents)}
+
+        monkeypatch.setattr(memory, "submit_async_retain", _capture_submit)
+
+        result = await memory.reprocess_document(
+            bank_id=bank_id,
+            document_id="doc-reprocess-scoped",
+            request_context=request_context,
+        )
+
+        assert result == {"operation_id": "captured", "items_count": 1}
+        assert captured["contents"][0]["observation_scopes"] == "combined"
+        assert captured["contents"][0]["observation_scopes_param"] == {"tag_key_whitelist": ["project"]}
     finally:
         await memory.delete_bank(bank_id, request_context=request_context)
 

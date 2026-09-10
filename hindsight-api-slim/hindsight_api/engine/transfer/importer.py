@@ -29,6 +29,7 @@ from ..retain.types import (
     ExtractedFact,
     ProcessedFact,
     RetainContent,
+    observation_scopes_json_value,
     pack_embedding,
 )
 from ..schema import fq_table
@@ -988,7 +989,7 @@ async def _import_observations(
             context="",
             metadata={},
             tags=list(obs.tags),
-            observation_scopes=obs.observation_scopes,
+            observation_scopes=observation_scopes_json_value(obs.observation_scopes),
             document_id=None,
             chunk_id=None,
         )
@@ -1103,7 +1104,7 @@ def _to_extracted_fact(fact: TransferFact) -> ExtractedFact:
         mentioned_at=mentioned_at,
         metadata=dict(fact.metadata),
         tags=list(fact.tags),
-        observation_scopes=fact.observation_scopes,
+        observation_scopes=observation_scopes_json_value(fact.observation_scopes),
     )
 
 

@@ -385,4 +385,55 @@ describe("observationScopes", () => {
     );
     expect(readEnvConfig({}).observationScopes).toBeUndefined();
   });
+
+  it("parses and sanitizes observationScopesParam while preserving an explicit empty whitelist", () => {
+    expect(
+      resolveConfig({
+        observationScopesParam: {
+          tagKeyWhitelist: [" project ", 7, "", "user"],
+        } as never,
+      }).observationScopesParam
+    ).toEqual({
+      tagKeyWhitelist: ["project", "user"],
+    });
+    expect(resolveConfig({}).observationScopesParam).toBeUndefined();
+    expect(
+      resolveConfig({ observationScopesParam: { tagKeyWhitelist: [] } }).observationScopesParam
+    ).toEqual({ tagKeyWhitelist: [] });
+  });
+
+  it("merges nested observation scope parameters through harness and bank layers", () => {
+    writeJson(globalCfg, {
+      observationScopesParam: {
+        tagKeyWhitelist: ["project"],
+      },
+      harnesses: {
+        "claude-code": { observationScopesParam: { tagKeyWhitelist: ["user"] } },
+      },
+    });
+    const cfg = loadConfig({ path: globalCfg, harness: "claude-code" });
+    expect(cfg.observationScopesParam).toEqual({
+      tagKeyWhitelist: ["user"],
+    });
+
+    const bank = applyBankConfig(
+      resolveConfig({
+        observationScopesParam: {
+          tagKeyWhitelist: ["project"],
+        },
+        banks: { b: { observationScopesParam: { tagKeyWhitelist: [] } } },
+      }),
+      "b"
+    );
+    expect(bank.cfg.observationScopesParam).toEqual({
+      tagKeyWhitelist: [],
+    });
+  });
+
+  it("keeps observationScopesParam file-only", () => {
+    expect(
+      readEnvConfig({ HINDSIGHT_OBSERVATION_SCOPES_PARAM: '{"tagKeyWhitelist":["project"]}' })
+        .observationScopesParam
+    ).toBeUndefined();
+  });
 });

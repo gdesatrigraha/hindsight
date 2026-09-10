@@ -10,8 +10,10 @@ from array import array
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 from ..metadata_utils import drop_null_values
 
@@ -28,6 +30,67 @@ logger = logging.getLogger(__name__)
 # Unparameterised on purpose: `array.array` is only generic in the type stubs, so
 # `array[float]` raises TypeError at import time on CPython.
 PackedEmbedding = array
+
+ObservationScopesMode = Literal["per_tag", "combined", "all_combinations", "shared"]
+
+
+class ObservationScopesParam(BaseModel):
+    """Optional parameters that control how retain tags feed observation scopes."""
+
+    tag_key_whitelist: list[str] | None = Field(
+        default=None,
+        description="Only tags whose key is listed here participate in observation scope generation.",
+    )
+
+
+def parse_observation_scopes_param(value: object) -> ObservationScopesParam | None:
+    """Normalize request/task-payload data into the typed retain parameter model."""
+    if value is None:
+        return None
+    if isinstance(value, ObservationScopesParam):
+        return value
+    return ObservationScopesParam.model_validate(value)
+
+
+class PersistedObservationScopes(BaseModel):
+    """Internal JSON envelope used when a retain whitelist must survive to consolidation."""
+
+    mode: ObservationScopesMode
+    tag_key_whitelist: list[str]
+
+
+class PersistedObservationScopesJSON(TypedDict):
+    """JSON-compatible shape of :class:`PersistedObservationScopes` at storage boundaries."""
+
+    mode: ObservationScopesMode
+    tag_key_whitelist: list[str]
+
+
+ObservationScopesValue = ObservationScopesMode | list[list[str]]
+ObservationScopesStoredValue = ObservationScopesValue | PersistedObservationScopesJSON
+
+
+def observation_scopes_json_value(
+    value: ObservationScopesStoredValue | PersistedObservationScopes | None,
+) -> ObservationScopesStoredValue | None:
+    """Convert the typed scope envelope to the JSON-compatible value stored in JSONB/CLOB."""
+    if isinstance(value, BaseModel):
+        return cast(PersistedObservationScopesJSON, value.model_dump())
+    return value
+
+
+def persist_observation_scopes(
+    mode: ObservationScopesStoredValue | None,
+    param: ObservationScopesParam | None,
+) -> ObservationScopesStoredValue | PersistedObservationScopes | None:
+    """Wrap a configured whitelist without changing legacy scope encodings."""
+    if param is None or param.tag_key_whitelist is None:
+        return mode
+    if isinstance(mode, dict):
+        raise ValueError("observation_scopes_param cannot be combined with persisted observation_scopes")
+    if isinstance(mode, list):
+        raise ValueError("observation_scopes_param cannot be combined with explicit observation_scopes")
+    return PersistedObservationScopes(mode=mode or "combined", tag_key_whitelist=list(param.tag_key_whitelist))
 
 
 def pack_embedding(values: Sequence[float]) -> PackedEmbedding:
@@ -72,6 +135,7 @@ class RetainContentDict(TypedDict, total=False):
             single pass with all tags; "shared" runs a single pass over one global,
             untagged scope so memories consolidate together regardless of tags;
             a list[list[str]] specifies exact passes.
+        observation_scopes_param: Optional parameters for observation scope generation.
         update_mode: How to handle existing documents with the same document_id (optional).
             "replace" (default) deletes old data and reprocesses. "append" concatenates
             new content to the existing document and reprocesses.
@@ -85,9 +149,8 @@ class RetainContentDict(TypedDict, total=False):
     entities: list[dict[str, str]]  # [{"text": "...", "type": "..."}]
     resolve_entities: bool
     tags: list[str]  # Visibility scope tags
-    observation_scopes: (
-        Literal["per_tag", "combined", "all_combinations", "shared"] | list[list[str]]
-    )  # Observation scopes for consolidation
+    observation_scopes: ObservationScopesValue  # Observation scopes for consolidation
+    observation_scopes_param: ObservationScopesParam
     update_mode: Literal["replace", "append"]
 
 
@@ -120,9 +183,8 @@ class RetainContent:
     # takes them literally; extracted entities are always resolved either way (#3479).
     resolve_entities: bool = True
     tags: list[str] = field(default_factory=list)  # Visibility scope tags
-    observation_scopes: Literal["per_tag", "combined", "all_combinations", "shared"] | list[list[str]] | None = (
-        None  # Observation scopes
-    )
+    observation_scopes: ObservationScopesStoredValue | None = None
+    observation_scopes_param: ObservationScopesParam | None = None
 
     def __post_init__(self) -> None:
         # Drop null-valued metadata keys (issue #3209): the retain API accepts
@@ -198,9 +260,8 @@ class ExtractedFact:
     mentioned_at: datetime | None = None
     metadata: dict[str, str] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)  # Visibility scope tags
-    observation_scopes: Literal["per_tag", "combined", "all_combinations", "shared"] | list[list[str]] | None = (
-        None  # Observation scopes
-    )
+    observation_scopes: ObservationScopesStoredValue | None = None
+    observation_scopes_param: ObservationScopesParam | None = None
 
 
 @dataclass
@@ -252,7 +313,7 @@ class ProcessedFact:
     tags: list[str] = field(default_factory=list)
 
     # Observation scopes for consolidation
-    observation_scopes: Literal["per_tag", "combined", "all_combinations", "shared"] | list[list[str]] | None = None
+    observation_scopes: ObservationScopesStoredValue | None = None
 
     @staticmethod
     def _is_degenerate_text(text: str) -> bool:
@@ -337,7 +398,12 @@ class ProcessedFact:
             chunk_id=chunk_id,
             content_index=extracted_fact.content_index,
             tags=extracted_fact.tags,
-            observation_scopes=extracted_fact.observation_scopes,
+            observation_scopes=observation_scopes_json_value(
+                persist_observation_scopes(
+                    extracted_fact.observation_scopes,
+                    extracted_fact.observation_scopes_param,
+                )
+            ),
         )
 
 

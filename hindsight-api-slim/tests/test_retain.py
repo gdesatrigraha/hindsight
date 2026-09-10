@@ -3011,6 +3011,90 @@ def test_retain_request_per_item_strategy_field():
     logger.info("✓ per-item strategy grouping works correctly")
 
 
+def test_retain_request_accepts_observation_scope_whitelist():
+    from hindsight_api.api.http import RetainRequest
+
+    request = RetainRequest.model_validate(
+        {
+            "items": [
+                {
+                    "content": "Project work",
+                    "observation_scopes": "all_combinations",
+                    "observation_scopes_param": {"tag_key_whitelist": ["project", "user"]},
+                }
+            ]
+        }
+    )
+
+    assert request.items[0].observation_scopes_param is not None
+    assert request.items[0].observation_scopes_param.tag_key_whitelist == ["project", "user"]
+
+
+def test_retain_request_rejects_whitelist_with_explicit_scopes():
+    from pydantic import ValidationError
+
+    from hindsight_api.api.http import RetainRequest
+
+    with pytest.raises(ValidationError, match="explicit observation_scopes"):
+        RetainRequest.model_validate(
+            {
+                "items": [
+                    {
+                        "content": "Project work",
+                        "observation_scopes": [["project:foo"]],
+                        "observation_scopes_param": {"tag_key_whitelist": ["project"]},
+                    }
+                ]
+            }
+        )
+
+
+def test_retain_request_allows_explicit_scopes_with_empty_parameters():
+    from hindsight_api.api.http import RetainRequest
+
+    request = RetainRequest.model_validate(
+        {
+            "items": [
+                {
+                    "content": "Project work",
+                    "observation_scopes": [["project:foo"]],
+                    "observation_scopes_param": {},
+                }
+            ]
+        }
+    )
+
+    assert request.items[0].observation_scopes == [["project:foo"]]
+
+
+@pytest.mark.asyncio
+async def test_observation_scope_whitelist_preserves_stored_fact_tags(memory, request_context):
+    bank_id = f"test-observation-scope-tags-{uuid.uuid4().hex[:8]}"
+    tags = ["project:example", "source:chat", "harness:codex"]
+
+    try:
+        await memory.retain_batch_async(
+            bank_id=bank_id,
+            contents=[
+                {
+                    "content": "The deployment workflow uses canary releases.",
+                    "tags": tags,
+                    "observation_scopes": "combined",
+                    "observation_scopes_param": {"tag_key_whitelist": ["project"]},
+                }
+            ],
+            request_context=request_context,
+        )
+
+        listing = await memory.list_memory_units(bank_id, limit=1000, request_context=request_context)
+        source_facts = [item for item in listing["items"] if item["fact_type"] != "observation"]
+
+        assert source_facts
+        assert all(set(item["tags"]) == set(tags) for item in source_facts)
+    finally:
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
 @pytest.mark.asyncio
 async def test_named_strategy_applied_end_to_end(memory, request_context):
     """

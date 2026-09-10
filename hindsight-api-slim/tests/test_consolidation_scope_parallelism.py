@@ -37,7 +37,6 @@ from hindsight_api.engine.consolidation.consolidator import (
 from hindsight_api.engine.memory_engine import MemoryEngine
 from hindsight_api.engine.providers.mock_llm import MockLLM
 
-
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
@@ -173,6 +172,49 @@ async def test_combined_mode_parallel_writes_to_memory_tag_set(memory: MemoryEng
                 frozenset({"user:carol"}),
             ]
         )
+    finally:
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
+@pytest.mark.memory_backend_incompatible
+async def test_identical_fact_tags_with_different_scope_plans_use_separate_batches(
+    memory: MemoryEngine, request_context
+):
+    """Per-item routing must not inherit the first row's plan within a tag group."""
+    bank_id = f"test-mixed-plans-{uuid.uuid4().hex[:8]}"
+    await memory.get_bank_profile(bank_id=bank_id, request_context=request_context)
+    try:
+        tags = ["project:foo", "source:chat"]
+        async with memory._pool.acquire() as conn:
+            await _insert_memory(conn, bank_id, "Full-scope fact", tags, "combined")
+            await _insert_memory(
+                conn,
+                bank_id,
+                "Project-scope fact",
+                tags,
+                {"mode": "combined", "tag_key_whitelist": ["project"]},
+            )
+
+        wrapper, _ = _mock_llm_one_obs_per_fact()
+        original_llm = memory._consolidation_llm_config
+        memory._consolidation_llm_config = wrapper
+        try:
+            with (
+                _override_config(memory, consolidation_llm_parallelism=2, consolidation_llm_batch_size=10),
+                patch.object(memory, "submit_async_consolidation"),
+            ):
+                result = await run_consolidation_job(
+                    memory_engine=memory, bank_id=bank_id, request_context=request_context
+                )
+        finally:
+            memory._consolidation_llm_config = original_llm
+
+        assert result["status"] == "completed"
+        assert set(await _fetch_observation_tag_sets(memory, bank_id, request_context)) == {
+            frozenset({"project:foo", "source:chat"}),
+            frozenset({"project:foo"}),
+        }
     finally:
         await memory.delete_bank(bank_id, request_context=request_context)
 

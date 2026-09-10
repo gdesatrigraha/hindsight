@@ -18,6 +18,7 @@ import pytest_asyncio
 from hindsight_api.api import create_app
 from hindsight_api.engine.consolidation.consolidator import _create_observation_directly
 from hindsight_api.engine.db_utils import acquire_with_retry
+from hindsight_api.engine.retain.types import PersistedObservationScopes
 from hindsight_api.engine.schema import fq_table
 from hindsight_api.engine.transfer import import_documents
 from hindsight_api.engine.transfer.importer import parse_archive
@@ -974,6 +975,67 @@ async def test_export_import_roundtrip_without_llm(memory, request_context, monk
         await memory.delete_bank(dst, request_context=request_context)
 
 
+@pytest.mark.parametrize("observation_scopes", ["combined", [["project:atlas"]]])
+def test_transfer_schema_keeps_legacy_observation_scope_shapes(observation_scopes):
+    """Adding the whitelist envelope does not invalidate v1 scalar/list archives."""
+    fact = TransferFact.model_validate(
+        {"text": "A legacy archived fact.", "fact_type": "world", "observation_scopes": observation_scopes}
+    )
+
+    assert fact.model_dump(mode="json")["observation_scopes"] == observation_scopes
+
+
+@pytest.mark.asyncio
+@pytest.mark.memory_backend_incompatible
+async def test_export_import_roundtrip_preserves_observation_scope_whitelist(memory, request_context):
+    """A persisted whitelist envelope survives archive validation and replay."""
+    src = _unique_bank("transfer_scope_whitelist_src")
+    dst = _unique_bank("transfer_scope_whitelist_dst")
+    expected = {"mode": "combined", "tag_key_whitelist": ["project"]}
+    try:
+        await memory.retain_batch_async(
+            bank_id=src,
+            contents=[
+                {
+                    "content": "Alice works on the Atlas project.",
+                    "document_id": "doc-scoped",
+                    "tags": ["project:atlas", "source:transfer-test"],
+                    "observation_scopes": "combined",
+                    "observation_scopes_param": {"tag_key_whitelist": ["project"]},
+                }
+            ],
+            request_context=request_context,
+        )
+
+        archive = await memory.export_documents_async(src, request_context)
+        parsed = parse_archive(archive)
+        exported_facts = [fact for document in parsed.documents for fact in document.facts]
+        assert exported_facts
+        assert all(
+            isinstance(fact.observation_scopes, PersistedObservationScopes)
+            and fact.observation_scopes.model_dump() == expected
+            for fact in exported_facts
+        )
+
+        result = await _import(memory, dst, archive, request_context)
+        assert result["facts_imported"] == len(exported_facts)
+
+        backend = await memory._get_backend()
+        async with acquire_with_retry(backend) as conn:
+            # The public memory listing intentionally omits this internal routing envelope;
+            # inspect the storage column directly to verify the import boundary preserved it.
+            imported_scopes = await conn.fetch(
+                f"SELECT observation_scopes FROM {fq_table('memory_units')} "
+                f"WHERE bank_id = $1 AND fact_type != 'observation'",
+                dst,
+            )
+        assert imported_scopes
+        assert all(_as_json(row["observation_scopes"]) == expected for row in imported_scopes)
+    finally:
+        await memory.delete_bank(src, request_context=request_context)
+        await memory.delete_bank(dst, request_context=request_context)
+
+
 async def _bank_snapshot(memory, bank_id):
     """Count everything persisted for a bank, for round-trip integrity comparison."""
     backend = await memory._get_backend()
@@ -1879,8 +1941,8 @@ async def test_export_bank_asks_for_the_store_when_the_caller_did_not_pass_one(m
     stayed. Asserted on archive contents, because an empty archive is exactly what the broken
     version returned successfully.
     """
-    from hindsight_api.engine.transfer import export as export_mod
     import hindsight_api.engine.memories as memories_mod
+    from hindsight_api.engine.transfer import export as export_mod
 
     # Patch the lookup, not `_resolve_memories` itself — the resolution is what is under test, and
     # `_resolve_memories` imports `get_memories` at call time.

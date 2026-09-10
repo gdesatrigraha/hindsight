@@ -128,6 +128,7 @@ class InMemoryMemories(MemoriesExtension):
                 fact_type=fact.fact_type,
                 document_id=document_id,
                 tags=list(fact.tags or []),
+                observation_scopes=getattr(fact, "observation_scopes", None),
                 created_at=datetime.now(timezone.utc),
             )
 
@@ -456,20 +457,20 @@ class InMemoryMemories(MemoriesExtension):
 
     async def update_memories(self, bank_id, patches, txn=None):
         self.calls.append("update_memories")
-        for patch in patches:
-            row = self.rows.get(str(patch.unit_id))
+        for memory_patch in patches:
+            row = self.rows.get(str(memory_patch.unit_id))
             if row is None:
                 continue
-            if patch.text is not None:
-                row.text = patch.text
-            if patch.tags is not None:
-                row.tags = list(patch.tags)
-            if patch.event_date is not None:
-                row.event_date = patch.event_date
-            if patch.proof_count_delta:
-                row.proof_count += patch.proof_count_delta
-            if patch.metadata:
-                row.metadata = {**(row.metadata or {}), **patch.metadata}
+            if memory_patch.text is not None:
+                row.text = memory_patch.text
+            if memory_patch.tags is not None:
+                row.tags = list(memory_patch.tags)
+            if memory_patch.event_date is not None:
+                row.event_date = memory_patch.event_date
+            if memory_patch.proof_count_delta:
+                row.proof_count += memory_patch.proof_count_delta
+            if memory_patch.metadata:
+                row.metadata = {**(row.metadata or {}), **memory_patch.metadata}
 
     async def apply_edit(
         self,
@@ -942,6 +943,35 @@ async def test_engine_list_memory_units_routes_through_store(memory, request_con
     res = await memory.list_memory_units("seam-bank", request_context=request_context)
     assert "list_memory_units" in store.calls
     assert res["total"] == 1  # the row exists only in the stub, so it can only have come from it
+
+
+async def test_store_owned_memory_round_trips_whitelisted_observation_scopes():
+    """The generic store contract carries the persisted envelope back to consolidation."""
+    from hindsight_api.engine.consolidation.consolidator import _resolve_obs_tags_list
+    from hindsight_api.engine.retain.types import ProcessedFact, pack_embedding
+
+    store = InMemoryMemories({})
+    scopes = {"mode": "combined", "tag_key_whitelist": ["project"]}
+    fact = ProcessedFact(
+        fact_text="A project fact",
+        fact_type="world",
+        embedding=pack_embedding([0.1]),
+        occurred_start=None,
+        occurred_end=None,
+        mentioned_at=None,
+        context="",
+        metadata={},
+        tags=["project:atlas", "source:test"],
+        observation_scopes=scopes,
+    )
+
+    await store.index_facts("store-bank", ["unit-1"], [fact])
+
+    stored = store.rows["unit-1"]
+    assert stored.observation_scopes == scopes
+    assert _resolve_obs_tags_list({"tags": stored.tags, "observation_scopes": stored.observation_scopes}) == [
+        ["project:atlas"]
+    ]
 
 
 async def test_engine_list_entities_routes_through_store(memory, request_context, restore_default_store):

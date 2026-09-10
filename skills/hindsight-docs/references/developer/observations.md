@@ -181,7 +181,7 @@ This ensures responses stay accurate even as the underlying data changes.
 
 ## Observation Scopes
 
-By default, observations are scoped to all of a memory's tags combined. The `observation_scopes` retain parameter lets you control this — building separate observations per tag, per combination, or with a custom list of scopes. This is key when a single memory carries multiple tags and you want each tag to accumulate its own observations independently.
+By default, observations are scoped to all of a memory's tags combined. The `observation_scopes` retain parameter lets you control this — building separate observations per tag, per combination, or with a custom list of scopes. When fact tags mix belief dimensions with retrieval/provenance dimensions, `observation_scopes_param.tag_key_whitelist` first limits which tag keys are eligible; the selected `observation_scopes` strategy then generates the concrete scopes. The original fact tags are not changed.
 
 See [`observation_scopes` in the Retain API](./api/retain#observation_scopes) for the full explanation and options.
 

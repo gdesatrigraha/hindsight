@@ -35,6 +35,11 @@ export interface KnowledgeNode {
  */
 export type ObservationScopes = "shared" | "combined" | "per_tag" | "all_combinations" | string[][];
 
+/** Optional parameters that narrow which fact-tag keys feed observation-scope generation. */
+export interface ObservationScopesParam {
+  tagKeyWhitelist: string[];
+}
+
 /**
  * One global scope for everything this plugin writes.
  *
@@ -63,6 +68,8 @@ export interface ClientOpts {
   maxParallelRetains?: number;
   /** Observation scoping for every retain this client sends. Default `DEFAULT_OBSERVATION_SCOPES`. */
   observationScopes?: ObservationScopes;
+  /** Optional tag-key filter applied by the server before expanding `observationScopes`. */
+  observationScopesParam?: ObservationScopesParam;
   /** Re-read the bearer token from the LIVE config, for hosts that outlive their credential.
    *  `apiToken` alone is a construction-time snapshot: a long-lived host (dsh, Cline, Kilo, the
    *  MCP server, any persistent plugin) kept signing with it forever, so enabling auth or rotating
@@ -162,6 +169,7 @@ export class HindsightClient {
   private readonly log: (msg: string) => void;
   readonly maxParallelRetains: number;
   readonly observationScopes: ObservationScopes;
+  readonly observationScopesParam?: ObservationScopesParam;
 
   constructor(o: ClientOpts) {
     this.apiUrl = o.apiUrl.replace(/\/$/, "");
@@ -172,6 +180,7 @@ export class HindsightClient {
     this.log = o.log ?? (() => {});
     this.maxParallelRetains = o.maxParallelRetains || DEFAULT_MAX_PARALLEL_RETAINS;
     this.observationScopes = o.observationScopes ?? DEFAULT_OBSERVATION_SCOPES;
+    this.observationScopesParam = o.observationScopesParam;
   }
 
   /** The credential in use, for diagnostics. Never log or report the VALUE — booleans only. */
@@ -276,6 +285,11 @@ export class HindsightClient {
       // version happened to process it. Servers older than 0.4.15 ignore the field.
       observation_scopes: this.observationScopes,
     };
+    if (this.observationScopesParam) {
+      item.observation_scopes_param = {
+        tag_key_whitelist: this.observationScopesParam.tagKeyWhitelist,
+      };
+    }
     if (opts.timestamp) item.timestamp = opts.timestamp;
     if (opts.metadata) item.metadata = opts.metadata;
     if (opts.updateMode) item.update_mode = opts.updateMode;

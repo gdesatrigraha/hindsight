@@ -515,6 +515,7 @@ export type {
   MetricsEndpointMetricsGetResponses,
   MinScores,
   ObservationScope,
+  ObservationScopesParam,
   ObservationScopesResponse,
   OperationProgress,
   OperationResponse,
