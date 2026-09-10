@@ -541,6 +541,57 @@ const canSpyOnModules = typeof (globalThis as any).Deno === "undefined";
     spy.mockRestore();
   });
 
+  test("retain forwards observation scope tag-key whitelist", async () => {
+    const spy = jest.spyOn(sdk, "retainMemories").mockResolvedValue({
+      data: { success: true, items_count: 1 },
+    } as any);
+
+    await client.retain(randomBankId(), "project fact", {
+      observationScopes: "combined",
+      observationScopesParam: { tagKeyWhitelist: ["project"] },
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              observation_scopes: "combined",
+              observation_scopes_param: { tag_key_whitelist: ["project"] },
+            }),
+          ],
+        }),
+      })
+    );
+    spy.mockRestore();
+  });
+
+  test("retainBatch serializes item-level observation scope parameters", async () => {
+    const spy = jest.spyOn(sdk, "retainMemories").mockResolvedValue({
+      data: { success: true, items_count: 1 },
+    } as any);
+
+    await client.retainBatch(randomBankId(), [
+      {
+        content: "project fact",
+        observation_scopes_param: { tag_key_whitelist: ["project", "user"] },
+      },
+    ]);
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              observation_scopes_param: { tag_key_whitelist: ["project", "user"] },
+            }),
+          ],
+        }),
+      })
+    );
+    spy.mockRestore();
+  });
+
   test("retain omits operationId from default, sync, and nullish delegation", async () => {
     const spy = jest.spyOn(client, "retainBatch").mockResolvedValue({
       success: true,

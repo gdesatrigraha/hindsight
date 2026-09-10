@@ -17,15 +17,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { items, document_id, document_tags, observation_scopes } = body;
+    const { items, document_id, document_tags, observation_scopes, observation_scopes_param } =
+      body;
 
-    // Map observation_scopes into each item if provided at request level
-    const mappedItems = observation_scopes
-      ? items?.map((item: any) => ({
-          ...item,
-          observation_scopes: item.observation_scopes ?? observation_scopes,
-        }))
-      : items;
+    // Map top-level observation settings into each item when provided. Item-level settings win,
+    // and an explicitly empty whitelist must be preserved rather than treated as absent.
+    const mappedItems =
+      observation_scopes !== undefined || observation_scopes_param !== undefined
+        ? items?.map((item: any) => ({
+            ...item,
+            observation_scopes: item.observation_scopes ?? observation_scopes,
+            observation_scopes_param: item.observation_scopes_param ?? observation_scopes_param,
+          }))
+        : items;
 
     const response = await hindsightClient.retainBatch(bankId, mappedItems, {
       documentId: document_id,

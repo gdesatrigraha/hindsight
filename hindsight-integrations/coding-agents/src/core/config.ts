@@ -17,7 +17,11 @@ import { join } from "node:path";
 import { DEFAULT_SEED_LIMIT } from "./seed";
 import { isOptedIn } from "./bank";
 import { log } from "./log";
-import { DEFAULT_OBSERVATION_SCOPES, type ObservationScopes } from "./hindsight";
+import {
+  DEFAULT_OBSERVATION_SCOPES,
+  type ObservationScopes,
+  type ObservationScopesParam,
+} from "./hindsight";
 
 /** Default config-file path: ~/.hindsight/coding-agent.json */
 export // HINDSIGHT_CONFIG joins the two env exceptions (diag/log files): it points at THE config file,
@@ -144,6 +148,8 @@ export interface RawConfig {
    *  tag set, "per_tag" one per tag, "all_combinations" one per subset; a string[][] declares the
    *  scopes literally. Anything else falls back to the default. */
   observationScopes?: ObservationScopes;
+  /** Optional tag-key whitelist applied by the server before expanding observationScopes. */
+  observationScopesParam?: ObservationScopesParam;
   /** Per-harness overrides of any of the fields above, keyed by harness name ("opencode",
    *  "claude-code", ...). Lets one config file give each agent its own bank/settings. */
   harnesses?: Record<string, Omit<RawConfig, "harnesses">>;
@@ -199,6 +205,7 @@ export interface Config {
   retainTags: string[];
   retainMetadata: Record<string, string>;
   observationScopes: ObservationScopes;
+  observationScopesParam?: ObservationScopesParam;
   banks: Record<string, Omit<RawConfig, "banks" | "harnesses"> & { bank?: string }>;
   logLevel: "debug" | "info" | "warn" | "error";
 }
@@ -272,6 +279,37 @@ function resolveObservationScopes(raw: RawConfig["observationScopes"]): Observat
   return DEFAULT_OBSERVATION_SCOPES;
 }
 
+/**
+ * Validate the optional observation-scope parameter object. An explicit empty whitelist is valid
+ * and must remain distinct from an omitted parameter object.
+ */
+function resolveObservationScopesParam(
+  raw: RawConfig["observationScopesParam"]
+): ObservationScopesParam | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+  if (!Array.isArray(value.tagKeyWhitelist)) return undefined;
+  const tagKeyWhitelist = value.tagKeyWhitelist
+    .filter((tagKey): tagKey is string => typeof tagKey === "string")
+    .map((tagKey) => tagKey.trim())
+    .filter(Boolean);
+  return { tagKeyWhitelist };
+}
+
+/** Merge the supported observation-scope parameter while preserving absent vs explicit empty. */
+function mergeObservationScopesParam(
+  a: RawConfig["observationScopesParam"],
+  b: RawConfig["observationScopesParam"]
+): RawConfig["observationScopesParam"] {
+  if (b && typeof b === "object" && !Array.isArray(b) && Array.isArray(b.tagKeyWhitelist)) {
+    return { tagKeyWhitelist: b.tagKeyWhitelist };
+  }
+  if (a && typeof a === "object" && !Array.isArray(a) && Array.isArray(a.tagKeyWhitelist)) {
+    return { tagKeyWhitelist: a.tagKeyWhitelist };
+  }
+  return undefined;
+}
+
 /** Apply defaults to a raw (file) config. Pure — the single place the defaults live. */
 export function resolveConfig(raw: RawConfig = {}): Config {
   const serverMode = ["cloud", "self-hosted", "daemon"].includes(raw.serverMode as string)
@@ -340,6 +378,7 @@ export function resolveConfig(raw: RawConfig = {}): Config {
           )
         : {},
     observationScopes: resolveObservationScopes(raw.observationScopes),
+    observationScopesParam: resolveObservationScopesParam(raw.observationScopesParam),
     banks: raw.banks && typeof raw.banks === "object" ? raw.banks : {},
     logLevel: ["debug", "info", "warn", "error"].includes(raw.logLevel as string)
       ? (raw.logLevel as "debug" | "info" | "warn" | "error")
@@ -361,7 +400,16 @@ function readRaw(path: string): RawConfig {
 /** Shallow-merge b over a; `harnesses` never survives into a layer; `banks` merges by bank id. */
 function mergeRaw(a: RawConfig, b: RawConfig): RawConfig {
   const { harnesses: _drop, ...flat } = b;
-  return { ...a, ...flat, banks: { ...(a.banks ?? {}), ...(b.banks ?? {}) } };
+  const observationScopesParam = mergeObservationScopesParam(
+    a.observationScopesParam,
+    b.observationScopesParam
+  );
+  return {
+    ...a,
+    ...flat,
+    ...(observationScopesParam ? { observationScopesParam } : {}),
+    banks: { ...(a.banks ?? {}), ...(b.banks ?? {}) },
+  };
 }
 
 /**
@@ -559,7 +607,11 @@ function resolvePartial(cfg: Config, patch: RawConfig): Partial<Config> {
   const full = resolveConfig(patch);
   const out: Partial<Config> = {};
   for (const key of Object.keys(patch) as (keyof RawConfig)[]) {
-    if (key in full)
+    if (key === "observationScopesParam") {
+      out.observationScopesParam = resolveObservationScopesParam(
+        mergeObservationScopesParam(cfg.observationScopesParam, patch.observationScopesParam)
+      );
+    } else if (key in full)
       (out as Record<string, unknown>)[key] = (full as unknown as Record<string, unknown>)[key];
   }
   return out;

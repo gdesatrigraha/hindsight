@@ -216,6 +216,33 @@ describe("HindsightClient.retain — observation scoping", () => {
     );
     expect(explicit.observation_scopes).toEqual([["project:demo"]]);
   });
+
+  it("sends the optional tag-key whitelist while leaving the original tags untouched", async () => {
+    const item = await retainItem(
+      new HindsightClient({
+        apiUrl: "http://x",
+        bank: "b",
+        observationScopes: "combined",
+        observationScopesParam: { tagKeyWhitelist: ["project", "user"] },
+      })
+    );
+    expect(item.observation_scopes).toBe("combined");
+    expect(item.observation_scopes_param).toEqual({
+      tag_key_whitelist: ["project", "user"],
+    });
+    expect(item.tags).toEqual(["source:chat", "harness:claude-code"]);
+  });
+
+  it("serializes an explicit empty whitelist instead of treating it as absent", async () => {
+    const item = await retainItem(
+      new HindsightClient({
+        apiUrl: "http://x",
+        bank: "b",
+        observationScopesParam: { tagKeyWhitelist: [] },
+      })
+    );
+    expect(item.observation_scopes_param).toEqual({ tag_key_whitelist: [] });
+  });
 });
 
 /**
@@ -396,13 +423,16 @@ describe("every client-building entrypoint forwards observationScopes", () => {
     });
   }
 
-  it("has no module that builds a client without passing cfg.observationScopes", () => {
+  it("has no module that builds a client without passing observation scope config", () => {
     const dropped = sourceFiles(SRC).filter((rel) => {
       const src = readFileSync(join(SRC, rel), "utf8");
       // `makeClient({` is the hook/session-start seam: the ClientOpts are built there even though
       // the constructor call itself is the injected default further up the file.
       const buildsClient = src.includes("new HindsightClient({") || src.includes("makeClient({");
-      return buildsClient && !src.includes("observationScopes:");
+      return (
+        buildsClient &&
+        (!src.includes("observationScopes:") || !src.includes("observationScopesParam:"))
+      );
     });
     expect(dropped).toEqual([]);
   });

@@ -31,6 +31,7 @@ from hindsight_api.engine.audit import (
     AuditLogStatsResponse,
 )
 from hindsight_api.engine.llm_trace import LLMRequestListResponse, LLMRequestStatsResponse
+from hindsight_api.engine.retain.types import ObservationScopesParam
 from hindsight_api.extensions import AuthenticationError, BankWriteOperation, PrecheckOperation
 
 
@@ -726,6 +727,25 @@ class MemoryItem(BaseModel):
             "A list of tag lists runs one pass per inner list, giving full control over which combinations to use."
         ),
     )
+    observation_scopes_param: ObservationScopesParam | None = Field(
+        default=None,
+        description=(
+            "Optional parameters for observation scope generation. "
+            "tag_key_whitelist selects which tag keys participate in the configured observation_scopes strategy. "
+            "A configured tag_key_whitelist cannot be combined with explicit observation scope lists."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_observation_scopes_param(self) -> "MemoryItem":
+        if (
+            self.observation_scopes_param is not None
+            and self.observation_scopes_param.tag_key_whitelist is not None
+            and isinstance(self.observation_scopes, list)
+        ):
+            raise ValueError("observation_scopes_param cannot be combined with explicit observation_scopes")
+        return self
+
     strategy: str | None = Field(
         default=None,
         description="Named retain strategy for this item. Overrides the bank's default strategy for this item only. "
@@ -8189,6 +8209,10 @@ def _register_routes(app: FastAPI):
                     content_dict["tags"] = item.tags
                 if item.observation_scopes is not None:
                     content_dict["observation_scopes"] = item.observation_scopes
+                if item.observation_scopes_param is not None:
+                    content_dict["observation_scopes_param"] = item.observation_scopes_param.model_dump(
+                        exclude_none=True
+                    )
                 if item.update_mode is not None:
                     content_dict["update_mode"] = item.update_mode
                 strategy_groups[effective].append(content_dict)

@@ -370,6 +370,7 @@ export async function runSessionStartHook(
       bank: bankId,
       maxParallelRetains: cfg.maxParallelRetains,
       observationScopes: cfg.observationScopes,
+      observationScopesParam: cfg.observationScopesParam,
     });
 
     const out = await buildSessionStartContext({ cwd, sessionRoot, bankId, cfg, client, harness });

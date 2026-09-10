@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 from ...extensions.base import Extension
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..retain.types import ObservationScopesStoredValue
     from ..search.retrieval import GraphRetriever
 
 
@@ -194,7 +195,7 @@ class StoredMemory:
     # Which observation scopes a memory is routed to. Consolidation reads it off
     # its candidates to decide which observation each one belongs in, so it has
     # to survive the round trip through the store.
-    observation_scopes: list | None = None
+    observation_scopes: ObservationScopesStoredValue | None = None
     entity_ids: list[str] = field(default_factory=list)
     source_memory_ids: list[str] = field(default_factory=list)
     consolidated_at: datetime | None = None
@@ -284,7 +285,7 @@ class FactRecord:
     document_id: str | None = None
     chunk_id: str | None = None
     metadata: dict | None = None
-    observation_scopes: list | str | None = None
+    observation_scopes: ObservationScopesStoredValue | None = None
     # Entity names + spelled-out date tokens Hindsight folds into its BM25 document.
     text_signals: str | None = None
     event_date: datetime | None = None

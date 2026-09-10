@@ -48,6 +48,7 @@ from ..llm_wrapper import sanitize_llm_output
 from ..memories import FactRecord, get_memories
 from ..memory_engine import Budget, fq_table
 from ..retain import embedding_utils
+from ..retain.types import PersistedObservationScopes
 from .prompts import (
     build_consolidation_input,
     build_consolidation_system_prompt,
@@ -613,12 +614,31 @@ def _parse_observation_scopes(memory: dict[str, Any]) -> Any:
     parse, but treat an unparseable string as an already-decoded scalar.
     """
     raw = memory.get("observation_scopes")
+    if isinstance(raw, dict):
+        try:
+            return PersistedObservationScopes.model_validate(raw)
+        except ValidationError:
+            return raw
     if not isinstance(raw, str):
         return raw
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            try:
+                return PersistedObservationScopes.model_validate(parsed)
+            except ValidationError:
+                return parsed
+        return parsed
     except (json.JSONDecodeError, ValueError):
         return raw
+
+
+def _eligible_observation_tags(tags: list[str], parsed: Any) -> list[str]:
+    """Filter scope-generation input tags while leaving the stored tag list untouched."""
+    if not isinstance(parsed, PersistedObservationScopes):
+        return tags
+    whitelist = set(parsed.tag_key_whitelist)
+    return [tag for tag in tags if tag.split(":", 1)[0] in whitelist]
 
 
 def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
@@ -638,6 +658,13 @@ def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
     """
     parsed = _parse_observation_scopes(memory)
     tags = list(memory.get("tags") or [])
+    has_scope_filter = isinstance(parsed, PersistedObservationScopes)
+
+    if has_scope_filter:
+        tags = _eligible_observation_tags(tags, parsed)
+        parsed = parsed.mode
+        if not tags and parsed != "shared":
+            return [[]]
 
     if parsed == "per_tag":
         return [[t] for t in tags] if tags else None
@@ -647,7 +674,11 @@ def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
         return [list(c) for r in range(1, len(tags) + 1) for c in combinations(tags, r)]
     if parsed == "shared":
         return [[]]
-    if parsed == "combined" or parsed is None:
+    if parsed == "combined":
+        # A filtered combined scope must be explicit: returning None tells the
+        # caller to use the memory's original (unfiltered) tags.
+        return [tags] if has_scope_filter else None
+    if parsed is None:
         return None
     return parsed  # explicit list[list[str]]
 
@@ -672,6 +703,12 @@ def _resolve_write_scopes(memory: dict[str, Any]) -> list[frozenset[str]]:
     parsed = _parse_observation_scopes(memory)
     tags = list(memory.get("tags") or [])
 
+    if isinstance(parsed, PersistedObservationScopes):
+        tags = _eligible_observation_tags(tags, parsed)
+        parsed = parsed.mode
+        if not tags and parsed != "shared":
+            return [frozenset()]
+
     if parsed == "per_tag":
         return [frozenset([t]) for t in tags] if tags else [frozenset()]
     if parsed == "all_combinations":
@@ -693,6 +730,28 @@ def _scope_sort_key(scope: frozenset[str]) -> tuple[str, ...]:
     orders and deadlock.
     """
     return tuple(sorted(scope))
+
+
+def _consolidation_batch_key(
+    memory: dict[str, Any],
+) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...] | None]:
+    """Return the isolation and routing identity for an LLM batch.
+
+    Fact tags remain the primary isolation boundary, but equal fact tags do not
+    imply equal observation routing: two retained facts can carry different
+    modes, tag-key whitelists, or explicit concrete scopes. The batch executor
+    intentionally resolves its passes once from the first row, so only memories
+    with the same resolved pass plan may share that batch.
+
+    Reuse ``_resolve_obs_tags_list`` here so batching and execution cannot drift
+    into separate implementations of observation-scope semantics. Keep the
+    concrete pass order in the key because it is also the order execution uses.
+    """
+    fact_tags = tuple(sorted(memory.get("tags") or []))
+    observation_passes = _resolve_obs_tags_list(memory)
+    if observation_passes is None:
+        return fact_tags, None
+    return fact_tags, tuple(tuple(scope) for scope in observation_passes)
 
 
 async def _filter_live_source_memories(
@@ -1425,12 +1484,20 @@ async def _run_consolidation_job(
         if not memories:
             break  # No more unconsolidated memories
 
-        # Group memories by exact tag set before batching — security requirement:
-        # memories with different tags must never share an LLM call.
-        tag_groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+        # Group memories by exact fact-tag set AND resolved observation routing
+        # before batching. Different fact tags must never share an LLM call
+        # (security boundary), and equal fact tags may still request different
+        # scope modes, whitelists, or explicit concrete scopes. The batch runner
+        # resolves its passes from the first row, so its whole batch must share
+        # that row's resolved plan.
+        tag_groups: dict[
+            tuple[tuple[str, ...], tuple[tuple[str, ...], ...] | None],
+            list[dict[str, Any]],
+        ] = {}
         for m in memories:
-            tag_key = tuple(sorted(m.get("tags") or []))
-            tag_groups.setdefault(tag_key, []).append(dict(m))
+            memory = dict(m)
+            batch_key = _consolidation_batch_key(memory)
+            tag_groups.setdefault(batch_key, []).append(memory)
 
         # Split each tag group into LLM batches respecting llm_batch_size, keeping
         # the group boundary intact so the dispatcher can parallelise across

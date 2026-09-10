@@ -159,6 +159,7 @@ export async function runRetainHook(
     bank: bankId,
     maxParallelRetains: cfg.maxParallelRetains,
     observationScopes: cfg.observationScopes,
+    observationScopesParam: cfg.observationScopesParam,
   });
 
   await buildRetain({

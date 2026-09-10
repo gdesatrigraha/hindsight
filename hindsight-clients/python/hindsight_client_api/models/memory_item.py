@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_
 from typing import Any, ClassVar, Dict, List, Optional
 from hindsight_client_api.models.entity_input import EntityInput
 from hindsight_client_api.models.observation_scopes import ObservationScopes
+from hindsight_client_api.models.observation_scopes_param import ObservationScopesParam
 from hindsight_client_api.models.timestamp import Timestamp
 from typing import Optional, Set
 from typing_extensions import Self
@@ -38,9 +39,10 @@ class MemoryItem(BaseModel):
     resolve_entities: Optional[StrictBool] = Field(default=True, description="Whether the names in 'entities' are resolved against the entities already in the bank. True (default) matches each name to a similar existing entity when it scores above the match threshold, so a name close to one already in the bank may resolve to that one instead of the one you wrote. False takes your names literally — an existing entity is reused only on a case-insensitive name match, any other name creates a new entity, and your names are never merged with each other. This applies only to the entities you supply here; auto-extracted entities are always resolved, since they are the extractor's guess at a name rather than yours. Ignored when 'entities' is omitted.")
     tags: Optional[List[StrictStr]] = None
     observation_scopes: Optional[ObservationScopes] = None
+    observation_scopes_param: Optional[ObservationScopesParam] = None
     strategy: Optional[StrictStr] = None
     update_mode: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["content", "timestamp", "context", "metadata", "document_id", "entities", "resolve_entities", "tags", "observation_scopes", "strategy", "update_mode"]
+    __properties: ClassVar[List[str]] = ["content", "timestamp", "context", "metadata", "document_id", "entities", "resolve_entities", "tags", "observation_scopes", "observation_scopes_param", "strategy", "update_mode"]
 
     @field_validator('update_mode')
     def update_mode_validate_enum(cls, value):
@@ -104,6 +106,9 @@ class MemoryItem(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of observation_scopes
         if self.observation_scopes:
             _dict['observation_scopes'] = self.observation_scopes.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of observation_scopes_param
+        if self.observation_scopes_param:
+            _dict['observation_scopes_param'] = self.observation_scopes_param.to_dict()
         # set to None if timestamp (nullable) is None
         # and model_fields_set contains the field
         if self.timestamp is None and "timestamp" in self.model_fields_set:
@@ -139,6 +144,11 @@ class MemoryItem(BaseModel):
         if self.observation_scopes is None and "observation_scopes" in self.model_fields_set:
             _dict['observation_scopes'] = None
 
+        # set to None if observation_scopes_param (nullable) is None
+        # and model_fields_set contains the field
+        if self.observation_scopes_param is None and "observation_scopes_param" in self.model_fields_set:
+            _dict['observation_scopes_param'] = None
+
         # set to None if strategy (nullable) is None
         # and model_fields_set contains the field
         if self.strategy is None and "strategy" in self.model_fields_set:
@@ -170,6 +180,7 @@ class MemoryItem(BaseModel):
             "resolve_entities": obj.get("resolve_entities") if obj.get("resolve_entities") is not None else True,
             "tags": obj.get("tags"),
             "observation_scopes": ObservationScopes.from_dict(obj["observation_scopes"]) if obj.get("observation_scopes") is not None else None,
+            "observation_scopes_param": ObservationScopesParam.from_dict(obj["observation_scopes_param"]) if obj.get("observation_scopes_param") is not None else None,
             "strategy": obj.get("strategy"),
             "update_mode": obj.get("update_mode")
         })

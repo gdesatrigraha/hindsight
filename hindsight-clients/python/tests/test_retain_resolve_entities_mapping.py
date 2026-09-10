@@ -55,3 +55,38 @@ def test_retain_batch_passes_resolve_entities_through(monkeypatch):
     )
 
     assert captured["request"].items[0].resolve_entities is False
+
+
+def test_retain_threads_observation_scope_parameters(monkeypatch):
+    client = Hindsight(base_url="http://example.invalid")
+    captured: dict[str, object] = {}
+    _capture_retain(monkeypatch, client, captured)
+
+    client.retain(
+        "test-bank",
+        "A project fact.",
+        observation_scopes="combined",
+        observation_scopes_param={"tag_key_whitelist": ["project"]},
+    )
+
+    item = captured["request"].items[0]
+    assert item.observation_scopes.actual_instance == "combined"
+    assert item.observation_scopes_param.tag_key_whitelist == ["project"]
+
+
+def test_retain_batch_threads_item_observation_scope_parameters(monkeypatch):
+    client = Hindsight(base_url="http://example.invalid")
+    captured: dict[str, object] = {}
+    _capture_retain(monkeypatch, client, captured)
+
+    client.retain_batch(
+        "test-bank",
+        items=[
+            {
+                "content": "A project fact.",
+                "observation_scopes_param": {"tag_key_whitelist": ["project", "user"]},
+            }
+        ],
+    )
+
+    assert captured["request"].items[0].observation_scopes_param.tag_key_whitelist == ["project", "user"]

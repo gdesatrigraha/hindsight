@@ -13,11 +13,18 @@ import json
 import pytest
 
 from hindsight_api.engine.consolidation.consolidator import (
+    _consolidation_batch_key,
     _resolve_obs_tags_list,
     _resolve_write_scopes,
     _scope_sort_key,
 )
-
+from hindsight_api.engine.retain.types import (
+    ExtractedFact,
+    ObservationScopesParam,
+    PersistedObservationScopes,
+    ProcessedFact,
+    persist_observation_scopes,
+)
 
 # ---------------------------------------------------------------------------
 # _resolve_write_scopes — frozenset output is what the lock dict keys on
@@ -103,6 +110,13 @@ class TestResolveWriteScopesShared:
         memory = {"tags": [], "observation_scopes": _as_json_string("shared")}
         assert _resolve_write_scopes(memory) == [frozenset()]
 
+    def test_whitelist_with_no_matching_tags_uses_untagged_scope(self):
+        memory = {
+            "tags": ["source:chat"],
+            "observation_scopes": PersistedObservationScopes(mode="combined", tag_key_whitelist=["project"]),
+        }
+        assert _resolve_write_scopes(memory) == [frozenset()]
+
 
 class TestResolveWriteScopesExplicitList:
     def test_uses_declared_scopes_verbatim(self):
@@ -184,6 +198,95 @@ class TestResolveObsTagsList:
         memory = {"tags": ["a", "b"], "observation_scopes": json.dumps("shared")}
         assert _resolve_obs_tags_list(memory) == [[]]
 
+    @pytest.mark.parametrize("mode", ["combined", "per_tag", "all_combinations"])
+    def test_whitelist_with_no_matching_tags_falls_back_to_shared(self, mode):
+        memory = {
+            "tags": ["source:chat", "harness:codex"],
+            "observation_scopes": PersistedObservationScopes(mode=mode, tag_key_whitelist=["project"]),
+        }
+        assert _resolve_obs_tags_list(memory) == [[]]
+
+    def test_empty_whitelist_falls_back_to_shared(self):
+        memory = {
+            "tags": ["project:foo"],
+            "observation_scopes": PersistedObservationScopes(mode="combined", tag_key_whitelist=[]),
+        }
+        assert _resolve_obs_tags_list(memory) == [[]]
+
+    def test_whitelist_keeps_complete_matching_tags_and_multiple_values(self):
+        original_tags = ["project:foo", "source:chat", "project:bar", "user:gde"]
+        memory = {
+            "tags": original_tags,
+            "observation_scopes": PersistedObservationScopes(mode="combined", tag_key_whitelist=["project", "user"]),
+        }
+        assert _resolve_obs_tags_list(memory) == [["project:foo", "project:bar", "user:gde"]]
+        assert memory["tags"] == original_tags
+
+    def test_whitelist_composes_with_per_tag_and_all_combinations(self):
+        tags = ["project:foo", "user:gde", "source:chat"]
+        per_tag = _resolve_obs_tags_list(
+            {
+                "tags": tags,
+                "observation_scopes": PersistedObservationScopes(mode="per_tag", tag_key_whitelist=["project", "user"]),
+            }
+        )
+        combinations_result = _resolve_obs_tags_list(
+            {
+                "tags": tags,
+                "observation_scopes": PersistedObservationScopes(
+                    mode="all_combinations", tag_key_whitelist=["project", "user"]
+                ),
+            }
+        )
+        assert per_tag == [["project:foo"], ["user:gde"]]
+        assert combinations_result == [["project:foo"], ["user:gde"], ["project:foo", "user:gde"]]
+
+    def test_whitelist_decodes_from_jsonb_string(self):
+        memory = {
+            "tags": ["project:foo", "source:chat"],
+            "observation_scopes": json.dumps({"mode": "combined", "tag_key_whitelist": ["project"]}),
+        }
+        assert _resolve_obs_tags_list(memory) == [["project:foo"]]
+
+    def test_whitelist_does_not_change_shared(self):
+        memory = {
+            "tags": ["project:foo"],
+            "observation_scopes": PersistedObservationScopes(mode="shared", tag_key_whitelist=["project"]),
+        }
+        assert _resolve_obs_tags_list(memory) == [[]]
+
+
+class TestObservationScopePersistence:
+    def test_absent_parameter_preserves_legacy_value(self):
+        assert persist_observation_scopes("combined", None) == "combined"
+
+    def test_configured_parameter_uses_internal_envelope(self):
+        persisted = persist_observation_scopes("combined", ObservationScopesParam(tag_key_whitelist=["project"]))
+        assert persisted == PersistedObservationScopes(mode="combined", tag_key_whitelist=["project"])
+
+    def test_explicit_scopes_and_parameter_are_rejected(self):
+        with pytest.raises(ValueError, match="explicit observation_scopes"):
+            persist_observation_scopes([["project:foo"]], ObservationScopesParam(tag_key_whitelist=["project"]))
+
+    def test_processed_fact_persists_json_envelope_without_changing_fact_tags(self):
+        tags = ["project:foo", "source:chat"]
+        fact = ExtractedFact(
+            fact_text="A project fact",
+            fact_type="world",
+            tags=tags,
+            observation_scopes="combined",
+            observation_scopes_param=ObservationScopesParam(tag_key_whitelist=["project"]),
+        )
+
+        processed = ProcessedFact.from_extracted_fact(fact, [0.1])
+
+        assert processed is not None
+        assert processed.observation_scopes == {
+            "mode": "combined",
+            "tag_key_whitelist": ["project"],
+        }
+        assert processed.tags == tags
+
 
 # ---------------------------------------------------------------------------
 # Agreement between obs_tags_list (dispatch) and write_scopes (locks)
@@ -206,6 +309,22 @@ class TestDispatchLockAgreement:
             {"tags": ["a", "b"], "observation_scopes": json.dumps("shared")},
             {"tags": ["a", "b"], "observation_scopes": json.dumps([["a"], ["b"], ["a", "b"]])},
             {"tags": ["a"], "observation_scopes": json.dumps([["a"], ["x"]])},
+            {
+                "tags": ["project:a", "source:chat"],
+                "observation_scopes": {"mode": "combined", "tag_key_whitelist": ["project"]},
+            },
+            {
+                "tags": ["project:a", "source:chat"],
+                "observation_scopes": {"mode": "per_tag", "tag_key_whitelist": ["project"]},
+            },
+            {
+                "tags": ["project:a", "source:chat"],
+                "observation_scopes": {"mode": "all_combinations", "tag_key_whitelist": ["project"]},
+            },
+            {
+                "tags": ["source:chat"],
+                "observation_scopes": {"mode": "combined", "tag_key_whitelist": []},
+            },
             # Pre-parsed Python shape (defensive — covers callers that hand the
             # helper a memory dict with a non-string value).
             {"tags": ["a", "b"], "observation_scopes": [["a"], ["b"], ["a", "b"]]},
@@ -226,6 +345,49 @@ class TestDispatchLockAgreement:
             f"dispatcher will write to scopes {missing} but no lock will be acquired "
             f"for them (memory={memory!r}, write_scopes={write_scopes!r})"
         )
+
+
+class TestConsolidationBatchKey:
+    def test_same_fact_tags_with_different_scope_plans_are_separate_batches(self):
+        """A batch cannot use its first row's observation plan for unlike rows."""
+        tags = ["project:foo", "source:chat"]
+        memories = [
+            {"tags": tags, "observation_scopes": "combined"},
+            {
+                "tags": tags,
+                "observation_scopes": PersistedObservationScopes(
+                    mode="combined",
+                    tag_key_whitelist=["project"],
+                ),
+            },
+            {"tags": tags, "observation_scopes": "per_tag"},
+            {"tags": tags, "observation_scopes": [["source:chat"]]},
+        ]
+
+        grouped: dict[object, list[dict]] = {}
+        for memory in memories:
+            grouped.setdefault(_consolidation_batch_key(memory), []).append(memory)
+
+        assert len(grouped) == len(memories)
+        assert all(len(group) == 1 for group in grouped.values())
+
+    def test_equivalent_rows_still_share_a_batch_key(self):
+        first = {
+            "tags": ["project:foo", "source:chat"],
+            "observation_scopes": PersistedObservationScopes(
+                mode="per_tag",
+                tag_key_whitelist=["project"],
+            ),
+        }
+        second = {
+            "tags": ["project:foo", "source:chat"],
+            "observation_scopes": PersistedObservationScopes(
+                mode="per_tag",
+                tag_key_whitelist=["project"],
+            ),
+        }
+
+        assert _consolidation_batch_key(first) == _consolidation_batch_key(second)
 
 
 # ---------------------------------------------------------------------------

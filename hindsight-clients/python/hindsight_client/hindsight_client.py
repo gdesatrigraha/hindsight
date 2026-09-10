@@ -11,7 +11,7 @@ import warnings
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 import hindsight_client_api
 
@@ -50,6 +50,12 @@ from hindsight_client_api.models.reflect_response import ReflectResponse
 from hindsight_client_api.models.retain_response import RetainResponse
 from hindsight_client_api.models.tool_calls_include_options import ToolCallsIncludeOptions
 from hindsight_client_api.models.version_response import VersionResponse
+
+
+class ObservationScopesParam(TypedDict, total=False):
+    """Optional parameters for observation-scope expansion."""
+
+    tag_key_whitelist: list[str]
 
 # Sentinel for "argument not provided", where None is itself a meaningful value
 # the server distinguishes from absence (e.g. parent_id=None means "the root").
@@ -313,6 +319,8 @@ class Hindsight:
         update_mode: str | None = None,
         retain_async: bool = False,
         operation_id: str | None = None,
+        observation_scopes: str | list[list[str]] | None = None,
+        observation_scopes_param: ObservationScopesParam | None = None,
     ) -> RetainResponse:
         """
         Store a single memory (sync wrapper — prefer :meth:`aretain` in async code).
@@ -329,6 +337,9 @@ class Hindsight:
                 existing entities (default True). False stores them exactly as written.
             tags: Optional list of tags for filtering memories during recall/reflect
             update_mode: How to handle existing documents ('replace' or 'append')
+            observation_scopes: Observation consolidation strategy or explicit scope lists
+            observation_scopes_param: Optional observation strategy parameters, including
+                ``tag_key_whitelist``
             retain_async: If True, process asynchronously in background (default: False)
             operation_id: Optional caller-supplied UUID for idempotent async retries; ignored by sync retain
 
@@ -347,6 +358,10 @@ class Hindsight:
             item["resolve_entities"] = resolve_entities
         if update_mode is not None:
             item["update_mode"] = update_mode
+        if observation_scopes is not None:
+            item["observation_scopes"] = observation_scopes
+        if observation_scopes_param is not None:
+            item["observation_scopes_param"] = observation_scopes_param
         batch_kwargs: dict[str, Any] = {
             "bank_id": bank_id,
             "items": [item],
@@ -375,7 +390,9 @@ class Hindsight:
             items: List of memory items, each a dict with 'content' (required) and optional keys:
                 'timestamp', 'context', 'metadata', 'document_id', 'entities',
                 'resolve_entities' (bool, default True), 'tags',
-                'observation_scopes' (str or list[list[str]]), 'strategy'.
+                'observation_scopes' (str or list[list[str]]),
+                'observation_scopes_param' (ObservationScopesParam, including optional
+                'tag_key_whitelist'), 'strategy'.
             document_id: Optional document ID for grouping memories (applied to items that don't have their own)
             document_tags: Optional list of tags applied to all items in this batch (merged with per-item tags)
             retain_async: If True, process asynchronously in background (default: False)
@@ -873,7 +890,9 @@ class Hindsight:
             items: List of memory items, each a dict with 'content' (required) and optional keys:
                 'timestamp', 'context', 'metadata', 'document_id', 'entities',
                 'resolve_entities' (bool, default True), 'tags',
-                'observation_scopes' (str or list[list[str]]), 'strategy'.
+                'observation_scopes' (str or list[list[str]]),
+                'observation_scopes_param' (ObservationScopesParam, including optional
+                'tag_key_whitelist'), 'strategy'.
             document_id: Optional document ID for grouping memories (applied to items that don't have their own)
             document_tags: Optional list of tags applied to all items in this batch (merged with per-item tags)
             retain_async: If True, process asynchronously in background (default: False)
@@ -908,6 +927,7 @@ class Hindsight:
                     resolve_entities=item.get("resolve_entities", True),
                     tags=item.get("tags"),
                     observation_scopes=obs_scopes,
+                    observation_scopes_param=item.get("observation_scopes_param"),
                     strategy=item.get("strategy"),
                     update_mode=item.get("update_mode"),
                 )
@@ -939,6 +959,8 @@ class Hindsight:
         update_mode: str | None = None,
         retain_async: bool = False,
         operation_id: str | None = None,
+        observation_scopes: str | list[list[str]] | None = None,
+        observation_scopes_param: ObservationScopesParam | None = None,
     ) -> RetainResponse:
         """
         Store a single memory (async — preferred over :meth:`retain`).
@@ -955,6 +977,9 @@ class Hindsight:
                 existing entities (default True). False stores them exactly as written.
             tags: Optional list of tags for filtering memories during recall/reflect
             update_mode: How to handle existing documents ('replace' or 'append')
+            observation_scopes: Observation consolidation strategy or explicit scope lists
+            observation_scopes_param: Optional observation strategy parameters, including
+                ``tag_key_whitelist``
             retain_async: If True, process asynchronously in background (default: False)
             operation_id: Optional caller-supplied UUID for idempotent async retries; ignored by sync retain
 
@@ -973,6 +998,10 @@ class Hindsight:
             item["resolve_entities"] = resolve_entities
         if update_mode is not None:
             item["update_mode"] = update_mode
+        if observation_scopes is not None:
+            item["observation_scopes"] = observation_scopes
+        if observation_scopes_param is not None:
+            item["observation_scopes_param"] = observation_scopes_param
         batch_kwargs: dict[str, Any] = {
             "bank_id": bank_id,
             "items": [item],

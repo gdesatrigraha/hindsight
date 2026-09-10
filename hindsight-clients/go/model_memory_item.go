@@ -31,6 +31,7 @@ type MemoryItem struct {
 	ResolveEntities *bool `json:"resolve_entities,omitempty"`
 	Tags []string `json:"tags,omitempty"`
 	ObservationScopes NullableObservationScopes `json:"observation_scopes,omitempty"`
+	ObservationScopesParam NullableObservationScopesParam `json:"observation_scopes_param,omitempty"`
 	Strategy NullableString `json:"strategy,omitempty"`
 	UpdateMode NullableString `json:"update_mode,omitempty"`
 }
@@ -382,6 +383,48 @@ func (o *MemoryItem) UnsetObservationScopes() {
 	o.ObservationScopes.Unset()
 }
 
+// GetObservationScopesParam returns the ObservationScopesParam field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *MemoryItem) GetObservationScopesParam() ObservationScopesParam {
+	if o == nil || IsNil(o.ObservationScopesParam.Get()) {
+		var ret ObservationScopesParam
+		return ret
+	}
+	return *o.ObservationScopesParam.Get()
+}
+
+// GetObservationScopesParamOk returns a tuple with the ObservationScopesParam field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *MemoryItem) GetObservationScopesParamOk() (*ObservationScopesParam, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.ObservationScopesParam.Get(), o.ObservationScopesParam.IsSet()
+}
+
+// HasObservationScopesParam returns a boolean if a field has been set.
+func (o *MemoryItem) HasObservationScopesParam() bool {
+	if o != nil && o.ObservationScopesParam.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetObservationScopesParam gets a reference to the given NullableObservationScopesParam and assigns it to the ObservationScopesParam field.
+func (o *MemoryItem) SetObservationScopesParam(v ObservationScopesParam) {
+	o.ObservationScopesParam.Set(&v)
+}
+// SetObservationScopesParamNil sets the value for ObservationScopesParam to be an explicit nil
+func (o *MemoryItem) SetObservationScopesParamNil() {
+	o.ObservationScopesParam.Set(nil)
+}
+
+// UnsetObservationScopesParam ensures that no value is present for ObservationScopesParam, not even an explicit nil
+func (o *MemoryItem) UnsetObservationScopesParam() {
+	o.ObservationScopesParam.Unset()
+}
+
 // GetStrategy returns the Strategy field value if set, zero value otherwise (both if not set or set to explicit null).
 func (o *MemoryItem) GetStrategy() string {
 	if o == nil || IsNil(o.Strategy.Get()) {
@@ -500,6 +543,9 @@ func (o MemoryItem) ToMap() (map[string]interface{}, error) {
 	}
 	if o.ObservationScopes.IsSet() {
 		toSerialize["observation_scopes"] = o.ObservationScopes.Get()
+	}
+	if o.ObservationScopesParam.IsSet() {
+		toSerialize["observation_scopes_param"] = o.ObservationScopesParam.Get()
 	}
 	if o.Strategy.IsSet() {
 		toSerialize["strategy"] = o.Strategy.Get()

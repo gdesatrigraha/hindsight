@@ -119,6 +119,12 @@ export interface EntityInput {
   type?: string;
 }
 
+/** Optional parameters applied while the selected observation scope strategy expands tags. */
+export interface ObservationScopesParam {
+  /** Only tags whose key (the part before the first `:`) is eligible for observation scopes. */
+  tagKeyWhitelist?: string[];
+}
+
 export interface MemoryItemInput {
   content: string;
   timestamp?: string | Date;
@@ -130,6 +136,8 @@ export interface MemoryItemInput {
   resolve_entities?: boolean;
   tags?: string[];
   observation_scopes?: "per_tag" | "combined" | "all_combinations" | "shared" | string[][];
+  /** Raw API spelling is also accepted for callers constructing batch items directly. */
+  observation_scopes_param?: { tag_key_whitelist?: string[] };
   strategy?: string;
   update_mode?: "replace" | "append";
 }
@@ -232,6 +240,8 @@ export class HindsightClient {
       updateMode?: "replace" | "append";
       /** Observation scoping strategy: 'per_tag', 'combined', 'all_combinations', 'shared', or explicit scope groups */
       observationScopes?: "per_tag" | "combined" | "all_combinations" | "shared" | string[][];
+      /** Optional observation strategy parameters, including a tag-key whitelist. */
+      observationScopesParam?: ObservationScopesParam;
       /** Extraction strategy override */
       strategy?: string;
       signal?: AbortSignal;
@@ -252,6 +262,9 @@ export class HindsightClient {
           tags: options?.tags,
           update_mode: options?.updateMode,
           observation_scopes: options?.observationScopes,
+          observation_scopes_param: options?.observationScopesParam
+            ? { tag_key_whitelist: options.observationScopesParam.tagKeyWhitelist }
+            : undefined,
           strategy: options?.strategy,
         },
       ],
@@ -290,6 +303,7 @@ export class HindsightClient {
       resolve_entities: item.resolve_entities,
       tags: item.tags,
       observation_scopes: item.observation_scopes,
+      observation_scopes_param: item.observation_scopes_param,
       strategy: item.strategy,
       update_mode: item.update_mode,
       timestamp: item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp,

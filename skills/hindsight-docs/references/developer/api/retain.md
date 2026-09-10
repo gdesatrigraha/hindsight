@@ -293,6 +293,52 @@ One pass per subset of tags — singles, pairs, triples, and so on. For 3 tags t
 
 **Use when** you need observations at every granularity — per tag, per pair, per group.
 
+#### Filter observation tags by key
+
+Fact tags often serve two different purposes: some describe the belief boundary (`project:*`,
+`user:*`), while others record retrieval or provenance information (`source:*`, `harness:*`). Use
+`observation_scopes_param.tag_key_whitelist` to select which tag keys are eligible before the
+existing `observation_scopes` strategy expands them:
+
+```text
+tags → tag_key_whitelist → observation_scopes → concrete scopes
+```
+
+For this item, all four tags remain stored on every extracted fact and remain available to Recall:
+
+```json
+{
+  "content": "The deployment workflow uses canary releases.",
+  "tags": ["project:example", "user:gde", "source:chat", "harness:codex"],
+  "observation_scopes": "combined",
+  "observation_scopes_param": {
+    "tag_key_whitelist": ["project", "user"]
+  }
+}
+```
+
+Only `project:example` and `user:gde` participate in scope generation:
+
+| Strategy | Concrete observation scopes |
+| --- | --- |
+| `combined` | `[["project:example", "user:gde"]]` |
+| `per_tag` | `[["project:example"], ["user:gde"]]` |
+| `all_combinations` | `[["project:example"], ["user:gde"], ["project:example", "user:gde"]]` |
+| `shared` | `[[]]` |
+
+The whitelist matches the part of a tag before its first `:` and keeps every matching complete
+tag, including multiple values for the same key. If the whitelist is explicitly empty, or no fact
+tag matches it, Hindsight uses the shared untagged scope `[[]]`. This is one concrete scope, not the
+empty outer list `[]`.
+
+Omitting `observation_scopes_param` preserves the existing behavior and lets every fact tag
+participate. A configured `tag_key_whitelist` cannot be combined with a custom explicit scope list,
+because explicit scopes are already complete instructions and are never silently filtered. An empty
+parameter object with no configured whitelist does not conflict with an explicit scope list.
+
+This setting affects scope generation for new Retain operations only. It does not migrate or
+rewrite observations that were consolidated previously.
+
 #### custom
 
 Pass an explicit list of tag sets. Each inner list is one scope.

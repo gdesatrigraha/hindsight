@@ -3043,6 +3043,10 @@ export type MemoryItem = {
     | Array<Array<string>>
     | null;
   /**
+   * Optional parameters for observation scope generation. tag_key_whitelist selects which tag keys participate in the configured observation_scopes strategy. A configured tag_key_whitelist cannot be combined with explicit observation scope lists.
+   */
+  observation_scopes_param?: ObservationScopesParam | null;
+  /**
    * Strategy
    *
    * Named retain strategy for this item. Overrides the bank's default strategy for this item only. Strategies are defined in the bank config under 'retain_strategies'.
@@ -3891,6 +3895,20 @@ export type ObservationScope = {
    * Number of observations that live under this scope
    */
   count: number;
+};
+
+/**
+ * ObservationScopesParam
+ *
+ * Optional parameters that control how retain tags feed observation scopes.
+ */
+export type ObservationScopesParam = {
+  /**
+   * Tag Key Whitelist
+   *
+   * Only tags whose key is listed here participate in observation scope generation.
+   */
+  tag_key_whitelist?: Array<string> | null;
 };
 
 /**

@@ -152,6 +152,7 @@ from hindsight_client_api.models.model_not import ModelNot
 from hindsight_client_api.models.not1 import Not1
 from hindsight_client_api.models.observation_scope import ObservationScope
 from hindsight_client_api.models.observation_scopes import ObservationScopes
+from hindsight_client_api.models.observation_scopes_param import ObservationScopesParam
 from hindsight_client_api.models.observation_scopes_response import ObservationScopesResponse
 from hindsight_client_api.models.operation_progress import OperationProgress
 from hindsight_client_api.models.operation_response import OperationResponse

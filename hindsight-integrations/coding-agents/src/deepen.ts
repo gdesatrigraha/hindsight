@@ -140,6 +140,7 @@ async function main() {
       project: repoNameOf(REPO!),
       maxParallelRetains: cfg.maxParallelRetains,
       observationScopes: cfg.observationScopes,
+      observationScopesParam: cfg.observationScopesParam,
       log,
     });
     log(`deepen -> ${client.apiUrl} bank=${FINAL_BANK} harness=${harness.name}`);
