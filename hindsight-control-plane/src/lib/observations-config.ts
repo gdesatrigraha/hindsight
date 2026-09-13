@@ -1,5 +1,6 @@
 export type ObservationsEdits = {
   enable_observations: boolean | null;
+  observation_scope_tag_key_whitelist: string[] | null;
   consolidation_llm_batch_size: number | null;
   consolidation_source_facts_max_tokens: number | null;
   consolidation_source_facts_max_tokens_per_observation: number | null;
@@ -8,21 +9,30 @@ export type ObservationsEdits = {
 };
 
 type ObservationsConfig = Partial<ObservationsEdits> & Record<string, unknown>;
-type ObservationsOverridesSnapshot = Pick<Partial<ObservationsEdits>, "enable_observations"> &
+type ObservationsOverridesSnapshot = Pick<
+  Partial<ObservationsEdits>,
+  "enable_observations" | "observation_scope_tag_key_whitelist"
+> &
   Record<string, unknown>;
 type ObservationsOverridesResponse = ObservationsOverridesSnapshot | null | undefined;
 const OBSERVATIONS_KEYS = [
   "enable_observations",
+  "observation_scope_tag_key_whitelist",
   "consolidation_llm_batch_size",
   "consolidation_source_facts_max_tokens",
   "consolidation_source_facts_max_tokens_per_observation",
   "observations_mission",
   "max_observations_per_scope",
 ] as const satisfies readonly (keyof ObservationsEdits)[];
+const OVERRIDE_AWARE_OBSERVATIONS_KEYS = [
+  "enable_observations",
+  "observation_scope_tag_key_whitelist",
+] as const satisfies readonly (keyof ObservationsEdits)[];
 
 function resolvedObservationsSlice(resolvedConfig: ObservationsConfig): ObservationsEdits {
   return {
     enable_observations: resolvedConfig.enable_observations ?? null,
+    observation_scope_tag_key_whitelist: resolvedConfig.observation_scope_tag_key_whitelist ?? null,
     consolidation_llm_batch_size: resolvedConfig.consolidation_llm_batch_size ?? null,
     consolidation_source_facts_max_tokens:
       resolvedConfig.consolidation_source_facts_max_tokens ?? null,
@@ -40,9 +50,10 @@ export function observationsSlice(
   return {
     ...resolvedObservationsSlice(resolvedConfig),
     // The resolved value cannot distinguish inheritance from an explicit bank
-    // override. Keep only this field override-aware so the other controls retain
-    // their existing resolved-value behavior.
+    // override. Keep policy fields override-aware so their controls can express
+    // the inherited, explicitly empty, and configured states independently.
     enable_observations: overrides?.enable_observations ?? null,
+    observation_scope_tag_key_whitelist: overrides?.observation_scope_tag_key_whitelist ?? null,
   };
 }
 
@@ -59,7 +70,12 @@ export function mergeResolvedObservations(
   for (const key of OBSERVATIONS_KEYS) {
     if (Object.prototype.hasOwnProperty.call(resolvedConfig, key)) {
       next[key] = resolvedConfig[key] ?? null;
-    } else if (key === "enable_observations" && submittedEdits[key] === null) {
+    } else if (
+      OVERRIDE_AWARE_OBSERVATIONS_KEYS.includes(
+        key as (typeof OVERRIDE_AWARE_OBSERVATIONS_KEYS)[number]
+      ) &&
+      submittedEdits[key] === null
+    ) {
       // After clearing an override, the old resolved value represented that
       // override. Drop it when permissions hide the new parent value.
       delete next[key];
@@ -77,9 +93,11 @@ export function mergeObservationsOverrides(
   // PATCH returns a complete bank-override snapshot. An absent key therefore
   // means the null tombstone was applied and the bank now inherits its parent.
   const next = { ...currentOverrides };
-  const value = responseOverrides?.enable_observations;
-  if (value === null || value === undefined) delete next.enable_observations;
-  else next.enable_observations = value;
+  for (const key of OVERRIDE_AWARE_OBSERVATIONS_KEYS) {
+    const value = responseOverrides?.[key];
+    if (value === null || value === undefined) delete next[key];
+    else next[key] = value;
+  }
   return next;
 }
 
@@ -100,6 +118,7 @@ export function reconcileObservationsEdits(
   // submission, while accepting canonical response values for untouched fields.
   return {
     enable_observations: reconcileField("enable_observations"),
+    observation_scope_tag_key_whitelist: reconcileField("observation_scope_tag_key_whitelist"),
     consolidation_llm_batch_size: reconcileField("consolidation_llm_batch_size"),
     consolidation_source_facts_max_tokens: reconcileField("consolidation_source_facts_max_tokens"),
     consolidation_source_facts_max_tokens_per_observation: reconcileField(

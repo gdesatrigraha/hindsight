@@ -293,51 +293,66 @@ One pass per subset of tags — singles, pairs, triples, and so on. For 3 tags t
 
 **Use when** you need observations at every granularity — per tag, per pair, per group.
 
-#### Filter observation tags by key
+#### Limit observation dimensions by tag key
 
-Fact tags often serve two different purposes: some describe the belief boundary (`project:*`,
-`user:*`), while others record retrieval or provenance information (`source:*`, `harness:*`). Use
-`observation_scopes_param.tag_key_whitelist` to select which tag keys are eligible before the
-existing `observation_scopes` strategy expands them:
+Fact tags often serve two different purposes: some define useful observation boundaries
+(`project:*`, `topic:*`), while others record retrieval or provenance information (`source:*`,
+`channel:*`). Set the bank configuration field `observation_scope_tag_key_whitelist` to control
+which tag keys may participate. The bank policy is applied before the existing per-retain
+`observation_scopes` strategy expands tags:
 
 ```text
-tags → tag_key_whitelist → observation_scopes → concrete scopes
+fact tags → bank whitelist → eligible tags → observation strategy → concrete scopes
 ```
 
-For this item, all four tags remain stored on every extracted fact and remain available to Recall:
+For example, configure a bank that receives facts from chat, tickets, and other sources:
 
 ```json
 {
-  "content": "The deployment workflow uses canary releases.",
-  "tags": ["project:example", "user:gde", "source:chat", "harness:codex"],
-  "observation_scopes": "combined",
-  "observation_scopes_param": {
-    "tag_key_whitelist": ["project", "user"]
+  "updates": {
+    "observation_scope_tag_key_whitelist": ["project", "topic"]
   }
 }
 ```
 
-Only `project:example` and `user:gde` participate in scope generation:
+Then retain a fact normally:
+
+```json
+{
+  "content": "The deployment workflow uses canary releases.",
+  "tags": [
+    "project:example",
+    "topic:deployments",
+    "source:chat",
+    "channel:engineering"
+  ],
+  "observation_scopes": "all_combinations"
+}
+```
+
+All four tags remain stored on the extracted facts and available to Recall. Only
+`project:example` and `topic:deployments` participate in scope generation:
 
 | Strategy | Concrete observation scopes |
 | --- | --- |
-| `combined` | `[["project:example", "user:gde"]]` |
-| `per_tag` | `[["project:example"], ["user:gde"]]` |
-| `all_combinations` | `[["project:example"], ["user:gde"], ["project:example", "user:gde"]]` |
+| `combined` | `[["project:example", "topic:deployments"]]` |
+| `per_tag` | `[["project:example"], ["topic:deployments"]]` |
+| `all_combinations` | `[["project:example"], ["topic:deployments"], ["project:example", "topic:deployments"]]` |
 | `shared` | `[[]]` |
 
-The whitelist matches the part of a tag before its first `:` and keeps every matching complete
-tag, including multiple values for the same key. If the whitelist is explicitly empty, or no fact
-tag matches it, Hindsight uses the shared untagged scope `[[]]`. This is one concrete scope, not the
-empty outer list `[]`.
+The whitelist matches the part before the first `:` and preserves every complete matching tag,
+including multiple values for one key. An unset or `null` whitelist preserves legacy behavior. An
+explicitly empty whitelist, or a whitelist with no matching fact tags, makes preset strategies use
+the shared untagged scope `[[]]` (one scope), never the empty outer list `[]`. The `shared` strategy
+always remains `[[]]`.
 
-Omitting `observation_scopes_param` preserves the existing behavior and lets every fact tag
-participate. A configured `tag_key_whitelist` cannot be combined with a custom explicit scope list,
-because explicit scopes are already complete instructions and are never silently filtered. An empty
-parameter object with no configured whitelist does not conflict with an explicit scope list.
+Explicit custom scopes are not silently filtered. With a configured whitelist, every non-empty
+custom scope must contain only permitted tag keys or Retain rejects it; the empty inner scope `[]`
+is always allowed. The same bank policy applies to manual consolidation, so it cannot be bypassed
+through another observation-creation path.
 
-This setting affects scope generation for new Retain operations only. It does not migrate or
-rewrite observations that were consolidated previously.
+The policy applies only when generating future observation scopes. Changing it does not migrate,
+delete, reconsolidate, or rewrite historical observations.
 
 #### custom
 

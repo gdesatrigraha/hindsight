@@ -31,7 +31,6 @@ from hindsight_api.engine.audit import (
     AuditLogStatsResponse,
 )
 from hindsight_api.engine.llm_trace import LLMRequestListResponse, LLMRequestStatsResponse
-from hindsight_api.engine.retain.types import ObservationScopesParam
 from hindsight_api.extensions import AuthenticationError, BankWriteOperation, PrecheckOperation
 
 
@@ -727,25 +726,6 @@ class MemoryItem(BaseModel):
             "A list of tag lists runs one pass per inner list, giving full control over which combinations to use."
         ),
     )
-    observation_scopes_param: ObservationScopesParam | None = Field(
-        default=None,
-        description=(
-            "Optional parameters for observation scope generation. "
-            "tag_key_whitelist selects which tag keys participate in the configured observation_scopes strategy. "
-            "A configured tag_key_whitelist cannot be combined with explicit observation scope lists."
-        ),
-    )
-
-    @model_validator(mode="after")
-    def validate_observation_scopes_param(self) -> "MemoryItem":
-        if (
-            self.observation_scopes_param is not None
-            and self.observation_scopes_param.tag_key_whitelist is not None
-            and isinstance(self.observation_scopes, list)
-        ):
-            raise ValueError("observation_scopes_param cannot be combined with explicit observation_scopes")
-        return self
-
     strategy: str | None = Field(
         default=None,
         description="Named retain strategy for this item. Overrides the bank's default strategy for this item only. "
@@ -1433,6 +1413,13 @@ class CreateBankRequest(BaseModel):
         default=None,
         description="Controls what gets synthesised into observations. Replaces built-in consolidation rules entirely.",
     )
+    observation_scope_tag_key_whitelist: list[str] | None = Field(
+        default=None,
+        description=(
+            "Tag keys permitted to participate in tagged observation scopes. "
+            "Fact tags are preserved; an empty list permits only the shared scope."
+        ),
+    )
     enable_temporal_retrieval: bool | None = Field(
         default=None,
         description=(
@@ -1487,6 +1474,7 @@ class CreateBankRequest(BaseModel):
             "retain_structured_chunk_size",
             "enable_observations",
             "observations_mission",
+            "observation_scope_tag_key_whitelist",
             "enable_temporal_retrieval",
             "enable_graph_retrieval",
             "enable_reranking",
@@ -2740,6 +2728,13 @@ class BankTemplateConfig(BaseModel):
     )
     enable_observations: bool | None = Field(default=None, description="Toggle observation consolidation")
     observations_mission: str | None = Field(default=None, description="Controls what gets synthesised")
+    observation_scope_tag_key_whitelist: list[str] | None = Field(
+        default=None,
+        description=(
+            "Tag keys permitted to participate in tagged observation scopes. "
+            "Fact tags are preserved; an empty list permits only the shared scope."
+        ),
+    )
     enable_temporal_retrieval: bool | None = Field(
         default=None, description="Toggle the temporal arm (and its date-aware query analysis) during recall"
     )
@@ -7836,6 +7831,8 @@ def _register_routes(app: FastAPI):
             )
         except OperationValidationError as e:
             raise HTTPException(status_code=e.status_code, detail=e.reason)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except (AuthenticationError, HTTPException):
             raise
         except Exception as e:
@@ -8209,10 +8206,6 @@ def _register_routes(app: FastAPI):
                     content_dict["tags"] = item.tags
                 if item.observation_scopes is not None:
                     content_dict["observation_scopes"] = item.observation_scopes
-                if item.observation_scopes_param is not None:
-                    content_dict["observation_scopes_param"] = item.observation_scopes_param.model_dump(
-                        exclude_none=True
-                    )
                 if item.update_mode is not None:
                     content_dict["update_mode"] = item.update_mode
                 strategy_groups[effective].append(content_dict)

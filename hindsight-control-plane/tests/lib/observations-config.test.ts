@@ -22,6 +22,7 @@ describe("observations config state", () => {
 
       expect(edits).toMatchObject({
         enable_observations: null,
+        observation_scope_tag_key_whitelist: null,
         consolidation_llm_batch_size: 12,
         observations_mission: "Resolve from the parent configuration",
       });
@@ -35,6 +36,30 @@ describe("observations config state", () => {
     );
 
     expect(edits.enable_observations).toBe(overrideValue);
+  });
+
+  it("distinguishes an inherited whitelist from an explicit empty whitelist", () => {
+    expect(
+      observationsSlice(
+        { observation_scope_tag_key_whitelist: ["project", "topic"] },
+        {}
+      ).observation_scope_tag_key_whitelist
+    ).toBeNull();
+    expect(
+      observationsSlice(
+        { observation_scope_tag_key_whitelist: ["project", "topic"] },
+        { observation_scope_tag_key_whitelist: [] }
+      ).observation_scope_tag_key_whitelist
+    ).toEqual([]);
+  });
+
+  it("preserves a configured bank whitelist", () => {
+    expect(
+      observationsSlice(
+        { observation_scope_tag_key_whitelist: ["parent"] },
+        { observation_scope_tag_key_whitelist: ["project", "topic"] }
+      ).observation_scope_tag_key_whitelist
+    ).toEqual(["project", "topic"]);
   });
 
   it("uses the PATCH response layers when resetting the saved state", () => {
@@ -57,6 +82,7 @@ describe("observations config state", () => {
       consolidation_source_facts_max_tokens_per_observation: 2_000,
       observations_mission: "Returned resolved state",
       max_observations_per_scope: 8,
+      observation_scope_tag_key_whitelist: null,
     });
   });
 
@@ -138,6 +164,25 @@ describe("observations config state", () => {
     });
   });
 
+  it("applies whitelist override snapshots without collapsing an empty list", () => {
+    const currentOverrides = {
+      audit_log_enabled: true,
+      observation_scope_tag_key_whitelist: ["old"],
+    };
+
+    expect(
+      mergeObservationsOverrides(currentOverrides, {
+        observation_scope_tag_key_whitelist: [],
+      })
+    ).toEqual({
+      audit_log_enabled: true,
+      observation_scope_tag_key_whitelist: [],
+    });
+    expect(mergeObservationsOverrides(currentOverrides, {})).toEqual({
+      audit_log_enabled: true,
+    });
+  });
+
   it.each([undefined, null])("treats a %s override snapshot as empty", (overrides) => {
     expect(
       observationsSlice({ enable_observations: true }, overrides).enable_observations
@@ -171,5 +216,25 @@ describe("observations config state", () => {
       ...editedDuringSave,
       consolidation_llm_batch_size: 10,
     });
+  });
+
+  it("keeps a whitelist edit made while a PATCH is in flight", () => {
+    const submitted = observationsSlice(
+      { observation_scope_tag_key_whitelist: null },
+      { observation_scope_tag_key_whitelist: ["project"] }
+    );
+    const editedDuringSave = {
+      ...submitted,
+      observation_scope_tag_key_whitelist: ["project", "topic"],
+    };
+
+    expect(
+      reconcileObservationsEdits(
+        editedDuringSave,
+        submitted,
+        { observation_scope_tag_key_whitelist: ["project"] },
+        { observation_scope_tag_key_whitelist: ["project"] }
+      ).observation_scope_tag_key_whitelist
+    ).toEqual(["project", "topic"]);
   });
 });

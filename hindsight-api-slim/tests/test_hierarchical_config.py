@@ -137,6 +137,7 @@ async def test_hierarchical_fields_categorization():
     assert "retain_strategies" in configurable
     assert "max_observations_per_scope" in configurable
     assert "observation_scope_limits" in configurable
+    assert "observation_scope_tag_key_whitelist" in configurable
     assert "reflect_source_facts_max_tokens" in configurable
     assert "llm_gemini_safety_settings" in configurable
     assert "mcp_enabled_tools" in configurable
@@ -151,7 +152,7 @@ async def test_hierarchical_fields_categorization():
     assert "mental_model_min_refresh_interval_seconds" in configurable
 
     # Verify count is correct
-    assert len(configurable) == 46
+    assert len(configurable) == 47
 
     # Verify credential fields (NEVER exposed)
     assert "llm_api_key" in credentials
@@ -170,6 +171,45 @@ async def test_hierarchical_fields_categorization():
     assert "llm_model" in static  # Not configurable (needs presets)
     assert "graph_retriever" in static  # Performance tuning, not configurable
     assert "llm_max_concurrent" in static  # Performance tuning, not configurable
+
+
+@pytest.mark.asyncio
+async def test_observation_scope_whitelist_persists_empty_and_null_distinctly():
+    backend = FakeBankConfigBackend()
+    resolver = ConfigResolver(backend=backend)
+    bank_id = "test-observation-whitelist"
+
+    await resolver.update_bank_config(bank_id, {"observation_scope_tag_key_whitelist": ["project", "topic"]})
+    overrides = await resolver._load_bank_config(bank_id)
+    assert overrides["observation_scope_tag_key_whitelist"] == ["project", "topic"]
+
+    await resolver.update_bank_config(bank_id, {"observation_scope_tag_key_whitelist": []})
+    overrides = await resolver._load_bank_config(bank_id)
+    assert overrides["observation_scope_tag_key_whitelist"] == []
+
+    await resolver.update_bank_config(bank_id, {"observation_scope_tag_key_whitelist": None})
+    overrides = await resolver._load_bank_config(bank_id)
+    assert "observation_scope_tag_key_whitelist" not in overrides
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [[""], ["project:bad"], [1]])
+async def test_observation_scope_whitelist_rejects_invalid_keys(value):
+    resolver = ConfigResolver(backend=FakeBankConfigBackend())
+    with pytest.raises(ValueError, match="observation_scope_tag_key_whitelist"):
+        await resolver.update_bank_config(
+            "test-observation-whitelist-invalid", {"observation_scope_tag_key_whitelist": value}
+        )
+
+
+@pytest.mark.asyncio
+async def test_retain_strategy_cannot_override_observation_scope_whitelist():
+    resolver = ConfigResolver(backend=FakeBankConfigBackend())
+    with pytest.raises(ValueError, match="bank policy fields cannot be overridden"):
+        await resolver.update_bank_config(
+            "test-observation-whitelist-strategy",
+            {"retain_strategies": {"unsafe": {"observation_scope_tag_key_whitelist": ["source"]}}},
+        )
 
 
 @pytest.mark.asyncio

@@ -734,6 +734,14 @@ describe("HindsightClient.configureBank — missions are seeded once (#2492)", (
     );
   });
 
+  it("does not overwrite a bank-level observation scope tag-key whitelist", async () => {
+    const body = await run(
+      [],
+      routes({ observation_scope_tag_key_whitelist: ["project", "topic"] })
+    );
+    expect(body.bank).not.toHaveProperty("observation_scope_tag_key_whitelist");
+  });
+
   it("treats a blank override as unset", async () => {
     const body = await run([], routes({ reflect_mission: "   " }));
     expect(typeof body.bank.reflect_mission).toBe("string");

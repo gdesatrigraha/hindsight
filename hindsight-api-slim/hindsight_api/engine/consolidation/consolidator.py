@@ -47,8 +47,8 @@ from ..llm_trace import (
 from ..llm_wrapper import sanitize_llm_output
 from ..memories import FactRecord, get_memories
 from ..memory_engine import Budget, fq_table
+from ..observation_scope_policy import filter_observation_scope_tags, validate_observation_scopes
 from ..retain import embedding_utils
-from ..retain.types import PersistedObservationScopes
 from .prompts import (
     build_consolidation_input,
     build_consolidation_system_prompt,
@@ -614,34 +614,18 @@ def _parse_observation_scopes(memory: dict[str, Any]) -> Any:
     parse, but treat an unparseable string as an already-decoded scalar.
     """
     raw = memory.get("observation_scopes")
-    if isinstance(raw, dict):
-        try:
-            return PersistedObservationScopes.model_validate(raw)
-        except ValidationError:
-            return raw
     if not isinstance(raw, str):
         return raw
     try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            try:
-                return PersistedObservationScopes.model_validate(parsed)
-            except ValidationError:
-                return parsed
-        return parsed
+        return json.loads(raw)
     except (json.JSONDecodeError, ValueError):
         return raw
 
 
-def _eligible_observation_tags(tags: list[str], parsed: Any) -> list[str]:
-    """Filter scope-generation input tags while leaving the stored tag list untouched."""
-    if not isinstance(parsed, PersistedObservationScopes):
-        return tags
-    whitelist = set(parsed.tag_key_whitelist)
-    return [tag for tag in tags if tag.split(":", 1)[0] in whitelist]
-
-
-def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
+def _resolve_obs_tags_list(
+    memory: dict[str, Any],
+    tag_key_whitelist: list[str] | None = None,
+) -> list[list[str]] | None:
     """Resolve a memory's ``observation_scopes`` spec into concrete scope tags.
 
     Returns ``None`` for the default ``combined``-mode single pass (caller uses
@@ -658,13 +642,20 @@ def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
     """
     parsed = _parse_observation_scopes(memory)
     tags = list(memory.get("tags") or [])
-    has_scope_filter = isinstance(parsed, PersistedObservationScopes)
 
-    if has_scope_filter:
-        tags = _eligible_observation_tags(tags, parsed)
-        parsed = parsed.mode
-        if not tags and parsed != "shared":
-            return [[]]
+    if isinstance(parsed, list):
+        validate_observation_scopes(parsed, tag_key_whitelist)
+        if parsed:
+            return parsed
+        # Preserve the legacy meaning of an empty outer list: no custom passes
+        # were declared, so fall back to combined. The bank policy still applies
+        # to that fallback below.
+        parsed = None
+
+    has_scope_filter = tag_key_whitelist is not None
+    tags = filter_observation_scope_tags(tags, tag_key_whitelist)
+    if has_scope_filter and not tags and parsed != "shared":
+        return [[]]
 
     if parsed == "per_tag":
         return [[t] for t in tags] if tags else None
@@ -679,11 +670,14 @@ def _resolve_obs_tags_list(memory: dict[str, Any]) -> list[list[str]] | None:
         # caller to use the memory's original (unfiltered) tags.
         return [tags] if has_scope_filter else None
     if parsed is None:
-        return None
-    return parsed  # explicit list[list[str]]
+        return [tags] if has_scope_filter else None
+    return parsed
 
 
-def _resolve_write_scopes(memory: dict[str, Any]) -> list[frozenset[str]]:
+def _resolve_write_scopes(
+    memory: dict[str, Any],
+    tag_key_whitelist: list[str] | None = None,
+) -> list[frozenset[str]]:
     """Return the observation scopes a memory will write to, as frozensets.
 
     Used by the parallel dispatcher to acquire one lock per scope before
@@ -703,11 +697,15 @@ def _resolve_write_scopes(memory: dict[str, Any]) -> list[frozenset[str]]:
     parsed = _parse_observation_scopes(memory)
     tags = list(memory.get("tags") or [])
 
-    if isinstance(parsed, PersistedObservationScopes):
-        tags = _eligible_observation_tags(tags, parsed)
-        parsed = parsed.mode
-        if not tags and parsed != "shared":
-            return [frozenset()]
+    if isinstance(parsed, list):
+        validate_observation_scopes(parsed, tag_key_whitelist)
+        if parsed:
+            return [frozenset(s) for s in parsed]
+        parsed = None
+
+    tags = filter_observation_scope_tags(tags, tag_key_whitelist)
+    if tag_key_whitelist is not None and not tags and parsed != "shared":
+        return [frozenset()]
 
     if parsed == "per_tag":
         return [frozenset([t]) for t in tags] if tags else [frozenset()]
@@ -719,7 +717,7 @@ def _resolve_write_scopes(memory: dict[str, Any]) -> list[frozenset[str]]:
         return [frozenset()]
     if parsed == "combined" or parsed is None:
         return [frozenset(tags)]
-    return [frozenset(s) for s in parsed]  # explicit list[list[str]]
+    return [frozenset(s) for s in parsed]
 
 
 def _scope_sort_key(scope: frozenset[str]) -> tuple[str, ...]:
@@ -734,12 +732,13 @@ def _scope_sort_key(scope: frozenset[str]) -> tuple[str, ...]:
 
 def _consolidation_batch_key(
     memory: dict[str, Any],
+    tag_key_whitelist: list[str] | None = None,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...] | None]:
     """Return the isolation and routing identity for an LLM batch.
 
     Fact tags remain the primary isolation boundary, but equal fact tags do not
     imply equal observation routing: two retained facts can carry different
-    modes, tag-key whitelists, or explicit concrete scopes. The batch executor
+    modes or explicit concrete scopes. The batch executor
     intentionally resolves its passes once from the first row, so only memories
     with the same resolved pass plan may share that batch.
 
@@ -748,7 +747,7 @@ def _consolidation_batch_key(
     concrete pass order in the key because it is also the order execution uses.
     """
     fact_tags = tuple(sorted(memory.get("tags") or []))
-    observation_passes = _resolve_obs_tags_list(memory)
+    observation_passes = _resolve_obs_tags_list(memory, tag_key_whitelist)
     if observation_passes is None:
         return fact_tags, None
     return fact_tags, tuple(tuple(scope) for scope in observation_passes)
@@ -1327,6 +1326,8 @@ async def run_consolidation_job(
     """
     # Resolve bank-specific config with hierarchical overrides
     config = await memory_engine._config_resolver.resolve_full_config(bank_id, request_context)
+    if observation_scopes is not None:
+        validate_observation_scopes(observation_scopes, config.observation_scope_tag_key_whitelist)
 
     # Build a configured LLM wrapper that applies per-bank settings (e.g. safety settings)
     # to every call without leaking across operations.
@@ -1487,7 +1488,7 @@ async def _run_consolidation_job(
         # Group memories by exact fact-tag set AND resolved observation routing
         # before batching. Different fact tags must never share an LLM call
         # (security boundary), and equal fact tags may still request different
-        # scope modes, whitelists, or explicit concrete scopes. The batch runner
+        # scope modes or explicit concrete scopes. The batch runner
         # resolves its passes from the first row, so its whole batch must share
         # that row's resolved plan.
         tag_groups: dict[
@@ -1496,7 +1497,7 @@ async def _run_consolidation_job(
         ] = {}
         for m in memories:
             memory = dict(m)
-            batch_key = _consolidation_batch_key(memory)
+            batch_key = _consolidation_batch_key(memory, config.observation_scope_tag_key_whitelist)
             tag_groups.setdefault(batch_key, []).append(memory)
 
         # Split each tag group into LLM batches respecting llm_batch_size, keeping
@@ -1516,7 +1517,7 @@ async def _run_consolidation_job(
             scopes: set[frozenset[str]] = set()
             for batch in batches:
                 for memory in batch:
-                    scopes.update(_resolve_write_scopes(memory))
+                    scopes.update(_resolve_write_scopes(memory, config.observation_scope_tag_key_whitelist))
             group_scopes.append(sorted(scopes, key=_scope_sort_key))
 
         async def _process_one_llm_batch(llm_batch_local: list[dict[str, Any]], batch_num_local: int) -> _BatchDeltas:
@@ -1573,7 +1574,11 @@ async def _run_consolidation_job(
                     # No connection is held across the batch: recall, the main LLM call, the
                     # per-action embeds, and dedup all run connection-free; each helper acquires a
                     # short-lived connection only around its own SQL.
-                    obs_tags_list = _resolve_obs_tags_list(sub_batch[0]) if sub_batch else None
+                    obs_tags_list = (
+                        _resolve_obs_tags_list(sub_batch[0], config.observation_scope_tag_key_whitelist)
+                        if sub_batch
+                        else None
+                    )
 
                     sub_deleted: int = 0
                     sub_llm_failed = False

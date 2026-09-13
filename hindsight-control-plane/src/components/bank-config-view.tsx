@@ -42,7 +42,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, Plus, Trash2, ChevronDown, ChevronRight, X } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Card } from "@/components/ui/card";
 
@@ -770,6 +770,49 @@ export function BankConfigView() {
               </SelectContent>
             </Select>
           </FieldRow>
+          <FieldRow
+            label={t("observationScopeWhitelistLabel")}
+            description={t("observationScopeWhitelistDescription")}
+          >
+            <Select
+              value={
+                observationsEdits.observation_scope_tag_key_whitelist === null
+                  ? INHERIT_SENTINEL
+                  : CUSTOM_WHITELIST_SENTINEL
+              }
+              onValueChange={(value) =>
+                setObservationsEdits((prev) => ({
+                  ...prev,
+                  observation_scope_tag_key_whitelist:
+                    value === INHERIT_SENTINEL
+                      ? null
+                      : (prev.observation_scope_tag_key_whitelist ??
+                        (Array.isArray(baseConfig.observation_scope_tag_key_whitelist)
+                          ? [...baseConfig.observation_scope_tag_key_whitelist]
+                          : [])),
+                }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={INHERIT_SENTINEL}>{t("serverDefault")}</SelectItem>
+                <SelectItem value={CUSTOM_WHITELIST_SENTINEL}>{t("custom")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </FieldRow>
+          {observationsEdits.observation_scope_tag_key_whitelist !== null && (
+            <TagKeyWhitelistEditor
+              value={observationsEdits.observation_scope_tag_key_whitelist}
+              onChange={(keys) =>
+                setObservationsEdits((prev) => ({
+                  ...prev,
+                  observation_scope_tag_key_whitelist: keys,
+                }))
+              }
+            />
+          )}
           <TextareaRow
             label={t("missionLabel")}
             description={t("observationsMissionDescription")}
@@ -1146,6 +1189,7 @@ function getExtractionModes(t: (key: string) => string): { value: string; label:
   ];
 }
 const INHERIT_SENTINEL = "__inherit__";
+const CUSTOM_WHITELIST_SENTINEL = "__custom_whitelist__";
 
 function RetainStrategyForm({
   values,
@@ -1460,6 +1504,84 @@ function RetainStrategiesPanel({
 }
 
 // ─── ToolSelector ─────────────────────────────────────────────────────────────
+
+function TagKeyWhitelistEditor({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (keys: string[]) => void;
+}) {
+  const t = useTranslations("bankConfig");
+  const [input, setInput] = useState("");
+
+  const addKeys = () => {
+    const additions = input
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key.length > 0 && !value.includes(key));
+    if (additions.length > 0) onChange([...value, ...additions]);
+    setInput("");
+  };
+
+  return (
+    <div className="px-6 py-4 space-y-3">
+      <div className="flex gap-2">
+        <Input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              addKeys();
+            }
+          }}
+          placeholder={t("observationScopeWhitelistPlaceholder")}
+          aria-label={t("observationScopeWhitelistInputLabel")}
+          className="font-mono"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addKeys}
+          disabled={!input.trim()}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          {t("observationScopeWhitelistAdd")}
+        </Button>
+      </div>
+      {value.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {value.map((key) => (
+            <span
+              key={key}
+              className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-1 font-mono text-xs"
+            >
+              <span className="truncate" title={key}>
+                {key}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(value.filter((candidate) => candidate !== key))}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label={t("observationScopeWhitelistRemove", { key })}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          {t("observationScopeWhitelistEmpty")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── ToolSelector ─────────────────────────────────────────────────────────────────────
 
 function ToolSelector({
   selected,

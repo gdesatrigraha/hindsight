@@ -178,23 +178,53 @@ async def test_combined_mode_parallel_writes_to_memory_tag_set(memory: MemoryEng
 
 @pytest.mark.asyncio
 @pytest.mark.memory_backend_incompatible
+async def test_different_banks_apply_their_own_observation_scope_whitelists(memory: MemoryEngine, request_context):
+    bank_ids = [f"test-project-scope-{uuid.uuid4().hex[:8]}", f"test-source-scope-{uuid.uuid4().hex[:8]}"]
+    try:
+        tags = ["project:foo", "source:chat"]
+        for bank_id, whitelist in zip(bank_ids, (["project"], ["source"]), strict=True):
+            await memory.get_bank_profile(bank_id=bank_id, request_context=request_context)
+            await memory.update_bank_config(
+                bank_id,
+                {"observation_scope_tag_key_whitelist": whitelist},
+                request_context=request_context,
+            )
+            async with memory._pool.acquire() as conn:
+                await _insert_memory(conn, bank_id, "Scoped fact", tags, "combined")
+
+        wrapper, _ = _mock_llm_one_obs_per_fact()
+        original_llm = memory._consolidation_llm_config
+        memory._consolidation_llm_config = wrapper
+        try:
+            with patch.object(memory, "submit_async_consolidation"):
+                results = [
+                    await run_consolidation_job(memory_engine=memory, bank_id=bank_id, request_context=request_context)
+                    for bank_id in bank_ids
+                ]
+        finally:
+            memory._consolidation_llm_config = original_llm
+
+        assert all(result["status"] == "completed" for result in results)
+        assert await _fetch_observation_tag_sets(memory, bank_ids[0], request_context) == [frozenset({"project:foo"})]
+        assert await _fetch_observation_tag_sets(memory, bank_ids[1], request_context) == [frozenset({"source:chat"})]
+    finally:
+        for bank_id in bank_ids:
+            await memory.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
+@pytest.mark.memory_backend_incompatible
 async def test_identical_fact_tags_with_different_scope_plans_use_separate_batches(
     memory: MemoryEngine, request_context
 ):
-    """Per-item routing must not inherit the first row's plan within a tag group."""
+    """Per-item explicit routing must not inherit another row's combined plan."""
     bank_id = f"test-mixed-plans-{uuid.uuid4().hex[:8]}"
     await memory.get_bank_profile(bank_id=bank_id, request_context=request_context)
     try:
         tags = ["project:foo", "source:chat"]
         async with memory._pool.acquire() as conn:
             await _insert_memory(conn, bank_id, "Full-scope fact", tags, "combined")
-            await _insert_memory(
-                conn,
-                bank_id,
-                "Project-scope fact",
-                tags,
-                {"mode": "combined", "tag_key_whitelist": ["project"]},
-            )
+            await _insert_memory(conn, bank_id, "Project-scope fact", tags, [["project:foo"]])
 
         wrapper, _ = _mock_llm_one_obs_per_fact()
         original_llm = memory._consolidation_llm_config

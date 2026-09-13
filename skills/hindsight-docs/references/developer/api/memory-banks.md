@@ -186,6 +186,35 @@ Controls whether consolidation runs automatically after retain, delete, and upda
 
 This is useful when you want full control over consolidation timing — for example, batching many retains before consolidating, or running [targeted consolidation](../observations.md#targeted-consolidation) for specific scopes only.
 
+### observation_scope_tag_key_whitelist
+
+Limits which fact-tag keys may become dimensions of newly generated observation scopes. Hindsight
+preserves every tag on the stored fact, filters only the tags eligible for consolidation, and then
+applies the fact's existing `observation_scopes` strategy.
+
+```json
+{
+  "updates": {
+    "observation_scope_tag_key_whitelist": ["project", "topic"]
+  }
+}
+```
+
+With tags such as `project:alpha`, `topic:authentication`, `source:chat`, and
+`channel:engineering`, `all_combinations` uses only the project and topic dimensions. The source
+and channel tags remain available for provenance and retrieval.
+
+- Unset or `null`: preserve legacy behavior; all fact tags may participate.
+- `[]`: permit no tagged observation dimensions. Preset strategies generate the shared scope
+  `[[]]`.
+- Non-empty list: permit only matching keys. If none match, the result is also `[[]]`.
+- `shared`: remains `[[]]` regardless of the policy.
+- Custom scopes: accepted only when every non-empty scope uses permitted keys; `[]` is always
+  allowed. Prohibited keys produce a validation error rather than being silently removed.
+
+This is a bank policy for future observation-scope generation, including manual consolidation.
+Changing it does not alter facts or migrate, delete, or reconsolidate historical observations.
+
 ### observations_mission
 
 Defines what this bank should synthesise into durable observations. Replaces the built-in consolidation rules entirely — leave blank to use the server default.
@@ -393,6 +422,7 @@ client.update_bank_config(
     retain_mission="Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges.",
     retain_extraction_mode="verbose",
     observations_mission="Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events.",
+    observation_scope_tag_key_whitelist=["project", "topic"],
     disposition_skepticism=4,
     disposition_literalism=4,
     disposition_empathy=2,
@@ -406,6 +436,7 @@ await client.updateBankConfig('my-bank', {
     retainMission: 'Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges.',
     retainExtractionMode: 'verbose',
     observationsMission: 'Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events.',
+    observationScopeTagKeyWhitelist: ['project', 'topic'],
     dispositionSkepticism: 4,
     dispositionLiteralism: 4,
     dispositionEmpathy: 2,
@@ -419,6 +450,7 @@ hindsight bank set-config my-bank \
   --retain-mission "Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges." \
   --retain-extraction-mode verbose \
   --observations-mission "Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events." \
+  --observation-scope-tag-key-whitelist project,topic \
   --disposition-skepticism 4 \
   --disposition-literalism 4 \
   --disposition-empathy 2

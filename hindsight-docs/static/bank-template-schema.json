@@ -107,6 +107,22 @@
           "description": "Controls what gets synthesised",
           "title": "Observations Mission"
         },
+        "observation_scope_tag_key_whitelist": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tag keys permitted to participate in tagged observation scopes. Fact tags are preserved; an empty list permits only the shared scope.",
+          "title": "Observation Scope Tag Key Whitelist"
+        },
         "enable_temporal_retrieval": {
           "anyOf": [
             {

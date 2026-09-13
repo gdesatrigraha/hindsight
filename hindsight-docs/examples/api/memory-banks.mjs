@@ -53,6 +53,7 @@ await client.updateBankConfig('my-bank', {
     retainMission: 'Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges.',
     retainExtractionMode: 'verbose',
     observationsMission: 'Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events.',
+    observationScopeTagKeyWhitelist: ['project', 'topic'],
     dispositionSkepticism: 4,
     dispositionLiteralism: 4,
     dispositionEmpathy: 2,

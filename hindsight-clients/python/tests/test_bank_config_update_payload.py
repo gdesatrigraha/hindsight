@@ -38,6 +38,29 @@ def test_update_bank_config_omits_retain_structured_chunk_size_when_unset(monkey
     assert captured["updates"] == {}
 
 
+def test_update_bank_config_preserves_whitelist_states(monkeypatch):
+    captured: list[dict[str, object]] = []
+
+    async def fake_update(self, bank_id, updates):
+        captured.append(updates)
+        return {"bank_id": bank_id, "config": {}, "overrides": updates}
+
+    monkeypatch.setattr(Hindsight, "_aupdate_bank_config", fake_update)
+    client = Hindsight(base_url="http://example.invalid")
+
+    client.update_bank_config("test-bank")
+    client.update_bank_config("test-bank", observation_scope_tag_key_whitelist=[])
+    client.update_bank_config("test-bank", observation_scope_tag_key_whitelist=["project", "topic"])
+    client.update_bank_config("test-bank", observation_scope_tag_key_whitelist=None)
+
+    assert captured == [
+        {},
+        {"observation_scope_tag_key_whitelist": []},
+        {"observation_scope_tag_key_whitelist": ["project", "topic"]},
+        {"observation_scope_tag_key_whitelist": None},
+    ]
+
+
 def test_update_bank_config_forwards_recall_pipeline_toggles(monkeypatch):
     """The recall stage toggles must reach the request body.
 
@@ -119,6 +142,7 @@ def test_create_bank_forwards_recall_pipeline_toggles(monkeypatch):
         enable_temporal_retrieval=False,
         enable_graph_retrieval=False,
         enable_reranking=False,
+        observation_scope_tag_key_whitelist=[],
     )
 
     body = captured["body"]
@@ -127,6 +151,7 @@ def test_create_bank_forwards_recall_pipeline_toggles(monkeypatch):
     assert body["enable_temporal_retrieval"] is False
     assert body["enable_graph_retrieval"] is False
     assert body["enable_reranking"] is False
+    assert body["observation_scope_tag_key_whitelist"] == []
 
 
 def test_create_bank_omits_recall_pipeline_toggles_when_unset(monkeypatch):

@@ -4749,6 +4749,57 @@ class MemoryEngine(MemoryEngineInterface):
         # Return the first (and only) list of unit IDs
         return result[0] if result else []
 
+    @staticmethod
+    def _validate_custom_observation_scopes(
+        contents: Iterable[dict[str, Any]],
+        tag_key_whitelist: list[str] | None,
+    ) -> None:
+        """Validate caller-authored scopes without altering preset strategies."""
+        from .observation_scope_policy import validate_observation_scopes
+
+        for item in contents:
+            scopes = item.get("observation_scopes")
+            if isinstance(scopes, list):
+                validate_observation_scopes(scopes, tag_key_whitelist)
+
+    async def _resolve_observation_scope_whitelist_for_retain(
+        self,
+        bank_id: str,
+        request_context: "RequestContext",
+    ) -> list[str] | None:
+        """Resolve policy for retain, including a new bank's default template."""
+        config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+        backend = await self._get_backend()
+        if await bank_utils.get_bank_profile_if_exists(backend, bank_id):
+            return config.observation_scope_tag_key_whitelist
+
+        # A missing bank receives the server-owned default template only after
+        # creation. Project its validated bank config here so invalid custom
+        # scopes are rejected before sync persistence or async queue creation.
+        from hindsight_api.api.http import load_default_bank_template_manifest
+
+        try:
+            manifest = load_default_bank_template_manifest()
+            template_updates = manifest.bank.get_config_updates() if manifest and manifest.bank else {}
+            if not template_updates:
+                return config.observation_scope_tag_key_whitelist
+            validated = await self._config_resolver.validate_bank_config_updates(
+                bank_id,
+                template_updates,
+                request_context,
+                projected_bank_overrides={},
+                check_permissions=False,
+            )
+        except (ValueError, ValidationError):
+            # Match _apply_default_bank_template's best-effort behavior: an
+            # invalid template is ignored rather than becoming active policy.
+            return config.observation_scope_tag_key_whitelist
+
+        return validated.updates.get(
+            "observation_scope_tag_key_whitelist",
+            config.observation_scope_tag_key_whitelist,
+        )
+
     @_bind_bank_id()
     async def retain_batch_async(
         self,
@@ -4843,6 +4894,14 @@ class MemoryEngine(MemoryEngineInterface):
             result = await self._validate_operation(self._operation_validator.validate_retain(ctx))
             if result and result.contents is not None:
                 contents = cast(list[RetainContentDict], result.contents)
+
+        # Extensions may replace the retain contents, so enforce bank policy on
+        # the final caller-authored scopes that will actually be persisted.
+        tag_key_whitelist = await self._resolve_observation_scope_whitelist_for_retain(bank_id, request_context)
+        self._validate_custom_observation_scopes(
+            contents,
+            tag_key_whitelist,
+        )
 
         await self._ensure_bank_exists(bank_id, request_context)
 
@@ -10929,8 +10988,6 @@ class MemoryEngine(MemoryEngineInterface):
             content_dict["tags"] = tags
         if retain_params.get("observation_scopes") is not None:
             content_dict["observation_scopes"] = retain_params["observation_scopes"]
-        if retain_params.get("observation_scopes_param") is not None:
-            content_dict["observation_scopes_param"] = retain_params["observation_scopes_param"]
 
         strategy = retain_params.get("strategy")
 
@@ -17981,6 +18038,12 @@ class MemoryEngine(MemoryEngineInterface):
             if replay is not None:
                 return replay
 
+        tag_key_whitelist = await self._resolve_observation_scope_whitelist_for_retain(bank_id, request_context)
+        self._validate_custom_observation_scopes(
+            contents,
+            tag_key_whitelist,
+        )
+
         # Reject duplicate document_ids on the QUEUED path only. Children fan out
         # to workers that claim them in parallel with no per-document gate, and
         # append is a non-transactional read-modify-write, so concurrent appends
@@ -18338,6 +18401,15 @@ class MemoryEngine(MemoryEngineInterface):
                 request_context=request_context,
             )
             await self._validate_operation(self._operation_validator.validate_bank_write(ctx))
+
+        if observation_scopes is not None:
+            from .observation_scope_policy import validate_observation_scopes
+
+            scope_policy_config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+            validate_observation_scopes(
+                observation_scopes,
+                scope_policy_config.observation_scope_tag_key_whitelist,
+            )
 
         # Pass tenant_id and api_key_id through task payload so the worker
         # can provide request context to extension hooks (e.g., usage metering

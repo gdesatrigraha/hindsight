@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..retain.types import ObservationScopesValue, PersistedObservationScopes
+from ..retain.types import ObservationScopesValue
 
 # Bump when the archive layout changes in a backward-incompatible way.
 SCHEMA_VERSION = 1
@@ -33,11 +33,7 @@ HISTORY_TABLES = ("audit_log", "llm_requests")
 # after its backing mental models exist.
 KNOWLEDGE_TABLES = ("knowledge_pages",)
 
-# The persisted whitelist envelope is additive to the v1 archive schema: older
-# archives still contain the legacy scalar/list forms, while newer archives may
-# carry the object written to memory_units so consolidation semantics survive a
-# transfer unchanged.
-ObservationScopes = ObservationScopesValue | PersistedObservationScopes
+ObservationScopes = ObservationScopesValue
 BankRowsJSONEncoding = Literal["decoded", "serialized"]
 
 

@@ -11,7 +11,7 @@ import warnings
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 import hindsight_client_api
 
@@ -51,11 +51,6 @@ from hindsight_client_api.models.retain_response import RetainResponse
 from hindsight_client_api.models.tool_calls_include_options import ToolCallsIncludeOptions
 from hindsight_client_api.models.version_response import VersionResponse
 
-
-class ObservationScopesParam(TypedDict, total=False):
-    """Optional parameters for observation-scope expansion."""
-
-    tag_key_whitelist: list[str]
 
 # Sentinel for "argument not provided", where None is itself a meaningful value
 # the server distinguishes from absence (e.g. parent_id=None means "the root").
@@ -320,7 +315,6 @@ class Hindsight:
         retain_async: bool = False,
         operation_id: str | None = None,
         observation_scopes: str | list[list[str]] | None = None,
-        observation_scopes_param: ObservationScopesParam | None = None,
     ) -> RetainResponse:
         """
         Store a single memory (sync wrapper — prefer :meth:`aretain` in async code).
@@ -338,8 +332,6 @@ class Hindsight:
             tags: Optional list of tags for filtering memories during recall/reflect
             update_mode: How to handle existing documents ('replace' or 'append')
             observation_scopes: Observation consolidation strategy or explicit scope lists
-            observation_scopes_param: Optional observation strategy parameters, including
-                ``tag_key_whitelist``
             retain_async: If True, process asynchronously in background (default: False)
             operation_id: Optional caller-supplied UUID for idempotent async retries; ignored by sync retain
 
@@ -360,8 +352,6 @@ class Hindsight:
             item["update_mode"] = update_mode
         if observation_scopes is not None:
             item["observation_scopes"] = observation_scopes
-        if observation_scopes_param is not None:
-            item["observation_scopes_param"] = observation_scopes_param
         batch_kwargs: dict[str, Any] = {
             "bank_id": bank_id,
             "items": [item],
@@ -390,9 +380,7 @@ class Hindsight:
             items: List of memory items, each a dict with 'content' (required) and optional keys:
                 'timestamp', 'context', 'metadata', 'document_id', 'entities',
                 'resolve_entities' (bool, default True), 'tags',
-                'observation_scopes' (str or list[list[str]]),
-                'observation_scopes_param' (ObservationScopesParam, including optional
-                'tag_key_whitelist'), 'strategy'.
+                'observation_scopes' (str or list[list[str]]), 'strategy'.
             document_id: Optional document ID for grouping memories (applied to items that don't have their own)
             document_tags: Optional list of tags applied to all items in this batch (merged with per-item tags)
             retain_async: If True, process asynchronously in background (default: False)
@@ -652,6 +640,7 @@ class Hindsight:
         retain_structured_chunk_size: int | None = None,
         enable_observations: bool | None = None,
         observations_mission: str | None = None,
+        observation_scope_tag_key_whitelist: list[str] | None = None,
         enable_temporal_retrieval: bool | None = None,
         enable_graph_retrieval: bool | None = None,
         enable_reranking: bool | None = None,
@@ -676,6 +665,7 @@ class Hindsight:
                 turn to keep whole during retain. Defaults to retain_chunk_size when unset.
             enable_observations: Toggle automatic observation consolidation after retain().
             observations_mission: Controls what gets synthesised into observations. Replaces built-in rules.
+            observation_scope_tag_key_whitelist: Tag keys permitted to participate in observation scopes.
             enable_temporal_retrieval: Run the temporal retrieval arm during recall. False also
                 skips the date-aware query analysis that feeds it.
             enable_graph_retrieval: Run the entity/link graph traversal arm during recall.
@@ -701,6 +691,7 @@ class Hindsight:
                 retain_structured_chunk_size=retain_structured_chunk_size,
                 enable_observations=enable_observations,
                 observations_mission=observations_mission,
+                observation_scope_tag_key_whitelist=observation_scope_tag_key_whitelist,
                 enable_temporal_retrieval=enable_temporal_retrieval,
                 enable_graph_retrieval=enable_graph_retrieval,
                 enable_reranking=enable_reranking,
@@ -725,6 +716,7 @@ class Hindsight:
         retain_structured_chunk_size: int | None = None,
         enable_observations: bool | None = None,
         observations_mission: str | None = None,
+        observation_scope_tag_key_whitelist: list[str] | None = None,
         enable_temporal_retrieval: bool | None = None,
         enable_graph_retrieval: bool | None = None,
         enable_reranking: bool | None = None,
@@ -768,6 +760,8 @@ class Hindsight:
             body["enable_observations"] = enable_observations
         if observations_mission is not None:
             body["observations_mission"] = observations_mission
+        if observation_scope_tag_key_whitelist is not None:
+            body["observation_scope_tag_key_whitelist"] = observation_scope_tag_key_whitelist
         if enable_temporal_retrieval is not None:
             body["enable_temporal_retrieval"] = enable_temporal_retrieval
         if enable_graph_retrieval is not None:
@@ -811,6 +805,7 @@ class Hindsight:
         retain_structured_chunk_size: int | None = None,
         enable_observations: bool | None = None,
         observations_mission: str | None = None,
+        observation_scope_tag_key_whitelist: list[str] | None = None,
         enable_temporal_retrieval: bool | None = None,
         enable_graph_retrieval: bool | None = None,
         enable_reranking: bool | None = None,
@@ -835,6 +830,7 @@ class Hindsight:
                 turn to keep whole during retain. Defaults to retain_chunk_size when unset.
             enable_observations: Toggle automatic observation consolidation after retain().
             observations_mission: Controls what gets synthesised into observations. Replaces built-in rules.
+            observation_scope_tag_key_whitelist: Tag keys permitted to participate in observation scopes.
             enable_temporal_retrieval: Run the temporal retrieval arm during recall. False also
                 skips the date-aware query analysis that feeds it.
             enable_graph_retrieval: Run the entity/link graph traversal arm during recall.
@@ -859,6 +855,7 @@ class Hindsight:
             retain_structured_chunk_size=retain_structured_chunk_size,
             enable_observations=enable_observations,
             observations_mission=observations_mission,
+            observation_scope_tag_key_whitelist=observation_scope_tag_key_whitelist,
             enable_temporal_retrieval=enable_temporal_retrieval,
             enable_graph_retrieval=enable_graph_retrieval,
             enable_reranking=enable_reranking,
@@ -890,9 +887,7 @@ class Hindsight:
             items: List of memory items, each a dict with 'content' (required) and optional keys:
                 'timestamp', 'context', 'metadata', 'document_id', 'entities',
                 'resolve_entities' (bool, default True), 'tags',
-                'observation_scopes' (str or list[list[str]]),
-                'observation_scopes_param' (ObservationScopesParam, including optional
-                'tag_key_whitelist'), 'strategy'.
+                'observation_scopes' (str or list[list[str]]), 'strategy'.
             document_id: Optional document ID for grouping memories (applied to items that don't have their own)
             document_tags: Optional list of tags applied to all items in this batch (merged with per-item tags)
             retain_async: If True, process asynchronously in background (default: False)
@@ -927,7 +922,6 @@ class Hindsight:
                     resolve_entities=item.get("resolve_entities", True),
                     tags=item.get("tags"),
                     observation_scopes=obs_scopes,
-                    observation_scopes_param=item.get("observation_scopes_param"),
                     strategy=item.get("strategy"),
                     update_mode=item.get("update_mode"),
                 )
@@ -960,7 +954,6 @@ class Hindsight:
         retain_async: bool = False,
         operation_id: str | None = None,
         observation_scopes: str | list[list[str]] | None = None,
-        observation_scopes_param: ObservationScopesParam | None = None,
     ) -> RetainResponse:
         """
         Store a single memory (async — preferred over :meth:`retain`).
@@ -978,8 +971,6 @@ class Hindsight:
             tags: Optional list of tags for filtering memories during recall/reflect
             update_mode: How to handle existing documents ('replace' or 'append')
             observation_scopes: Observation consolidation strategy or explicit scope lists
-            observation_scopes_param: Optional observation strategy parameters, including
-                ``tag_key_whitelist``
             retain_async: If True, process asynchronously in background (default: False)
             operation_id: Optional caller-supplied UUID for idempotent async retries; ignored by sync retain
 
@@ -1000,8 +991,6 @@ class Hindsight:
             item["update_mode"] = update_mode
         if observation_scopes is not None:
             item["observation_scopes"] = observation_scopes
-        if observation_scopes_param is not None:
-            item["observation_scopes_param"] = observation_scopes_param
         batch_kwargs: dict[str, Any] = {
             "bank_id": bank_id,
             "items": [item],
@@ -1946,6 +1935,7 @@ class Hindsight:
         # Observation / consolidation settings
         enable_observations: bool | None = None,
         observations_mission: str | None = None,
+        observation_scope_tag_key_whitelist: list[str] | None | object = _UNSET,
         enable_temporal_retrieval: bool | None = None,
         enable_graph_retrieval: bool | None = None,
         enable_reranking: bool | None = None,
@@ -1984,6 +1974,8 @@ class Hindsight:
             entities_allow_free_form: Whether to allow entity types outside entity_labels (default: True).
             enable_observations: Toggle automatic observation consolidation after retain().
             observations_mission: Controls what gets synthesised into observations.
+            observation_scope_tag_key_whitelist: Permitted observation tag keys. Pass ``[]`` to
+                disallow tagged scopes or ``None`` explicitly to clear the bank override.
             enable_temporal_retrieval: Run the temporal retrieval arm during recall.
             enable_graph_retrieval: Run the entity/link graph traversal arm during recall.
             enable_reranking: Rerank fused candidates with the cross-encoder.
@@ -2031,6 +2023,8 @@ class Hindsight:
             }.items()
             if v is not None
         }
+        if observation_scope_tag_key_whitelist is not _UNSET:
+            updates["observation_scope_tag_key_whitelist"] = observation_scope_tag_key_whitelist
         return _run_async(self._aupdate_bank_config(bank_id, updates))
 
     async def _aupdate_bank_config(self, bank_id: str, updates: dict[str, Any]) -> dict[str, Any]:

@@ -72,6 +72,7 @@ client.update_bank_config(
     retain_mission="Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges.",
     retain_extraction_mode="verbose",
     observations_mission="Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events.",
+    observation_scope_tag_key_whitelist=["project", "topic"],
     disposition_skepticism=4,
     disposition_literalism=4,
     disposition_empathy=2,

@@ -1409,6 +1409,53 @@ async def test_patch_config_persists_override_for_uncreated_bank(api_client, fie
 
 
 @pytest.mark.asyncio
+async def test_bank_api_round_trips_observation_scope_whitelist_states(api_client):
+    bank_id = f"observation_scope_whitelist_{datetime.now().timestamp()}"
+
+    created = await api_client.put(
+        f"/v1/default/banks/{bank_id}",
+        json={"observation_scope_tag_key_whitelist": ["project", "topic"]},
+    )
+    assert created.status_code == 200, created.text
+
+    read = await api_client.get(f"/v1/default/banks/{bank_id}/config")
+    assert read.status_code == 200, read.text
+    assert read.json()["overrides"]["observation_scope_tag_key_whitelist"] == ["project", "topic"]
+
+    emptied = await api_client.patch(
+        f"/v1/default/banks/{bank_id}/config",
+        json={"updates": {"observation_scope_tag_key_whitelist": []}},
+    )
+    assert emptied.status_code == 200, emptied.text
+    assert emptied.json()["overrides"]["observation_scope_tag_key_whitelist"] == []
+
+    cleared = await api_client.patch(
+        f"/v1/default/banks/{bank_id}/config",
+        json={"updates": {"observation_scope_tag_key_whitelist": None}},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert "observation_scope_tag_key_whitelist" not in cleared.json()["overrides"]
+
+
+@pytest.mark.asyncio
+async def test_manual_consolidation_returns_400_for_prohibited_observation_scope(api_client):
+    bank_id = f"manual_scope_policy_{datetime.now().timestamp()}"
+    created = await api_client.put(
+        f"/v1/default/banks/{bank_id}",
+        json={"observation_scope_tag_key_whitelist": ["project"]},
+    )
+    assert created.status_code == 200, created.text
+
+    response = await api_client.post(
+        f"/v1/default/banks/{bank_id}/consolidate",
+        json={"observation_scopes": [["source:chat"]]},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "source" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_patch_config_rejection_does_not_create_bank(api_client):
     """Invalid config must fail before it creates a bank."""
     test_bank_id = f"patch_invalid_config_{datetime.now().timestamp()}"

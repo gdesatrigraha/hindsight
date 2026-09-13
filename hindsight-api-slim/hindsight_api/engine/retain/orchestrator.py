@@ -295,7 +295,6 @@ from .types import (
     RetainContent,
     RetainContentDict,
     UserEntities,
-    parse_observation_scopes_param,
 )
 
 logger = logging.getLogger(__name__)
@@ -390,10 +389,6 @@ def _build_retain_params(contents_dicts, document_tags=None, doc_contents=None):
             retain_params["metadata"] = first_item["metadata"]
         if first_item.get("observation_scopes") is not None:
             retain_params["observation_scopes"] = first_item["observation_scopes"]
-        if first_item.get("observation_scopes_param") is not None:
-            retain_params["observation_scopes_param"] = parse_observation_scopes_param(
-                first_item["observation_scopes_param"]
-            ).model_dump(exclude_none=True)
 
     return retain_params, merged_tags
 
@@ -1682,8 +1677,6 @@ async def retain_batch(
                 existing_content["metadata"] = first["metadata"]
             if first.get("observation_scopes") is not None:
                 existing_content["observation_scopes"] = first["observation_scopes"]
-            if first.get("observation_scopes_param") is not None:
-                existing_content["observation_scopes_param"] = first["observation_scopes_param"]
             if first.get("tags"):
                 existing_content["tags"] = first["tags"]
             contents_dicts = [existing_content, *contents_dicts]
@@ -1711,8 +1704,6 @@ async def retain_batch(
                         contents_dicts[0]["metadata"] = first["metadata"]
                     if first.get("observation_scopes") is not None:
                         contents_dicts[0]["observation_scopes"] = first["observation_scopes"]
-                    if first.get("observation_scopes_param") is not None:
-                        contents_dicts[0]["observation_scopes_param"] = first["observation_scopes_param"]
                     if first.get("tags"):
                         contents_dicts[0]["tags"] = first["tags"]
             except (json.JSONDecodeError, ValueError, TypeError):
@@ -2330,7 +2321,6 @@ async def _streaming_retain_batch(
                 resolve_entities=source.resolve_entities,
                 tags=source.tags,
                 observation_scopes=source.observation_scopes,
-                observation_scopes_param=source.observation_scopes_param,
             )
             # Attribute this chunk's extraction LLM call to its document, so the
             # trace row carries document_id (a document accrues one such trace
@@ -3971,14 +3961,6 @@ def _build_contents(contents_dicts: list[RetainContentDict], document_tags: list
     for item in contents_dicts:
         item_tags = item.get("tags", []) or []
         merged_tags = list(set(item_tags + (document_tags or [])))
-        observation_scopes_param = parse_observation_scopes_param(item.get("observation_scopes_param"))
-        if (
-            observation_scopes_param is not None
-            and observation_scopes_param.tag_key_whitelist is not None
-            and isinstance(item.get("observation_scopes"), list)
-        ):
-            raise ValueError("observation_scopes_param cannot be combined with explicit observation_scopes")
-
         if "event_date" in item and item["event_date"] is None:
             event_date_value = None
         elif item.get("event_date"):
@@ -3995,7 +3977,6 @@ def _build_contents(contents_dicts: list[RetainContentDict], document_tags: list
             resolve_entities=item.get("resolve_entities", True),
             tags=merged_tags,
             observation_scopes=item.get("observation_scopes"),
-            observation_scopes_param=observation_scopes_param,
         )
         contents.append(content)
     return contents
@@ -4061,7 +4042,6 @@ def _build_delta_contents(
             resolve_entities=template_content.resolve_entities,
             tags=template_content.tags,
             observation_scopes=template_content.observation_scopes,
-            observation_scopes_param=template_content.observation_scopes_param,
         )
         delta_contents.append(delta_content)
         delta_chunk_map[len(delta_contents) - 1] = original_chunk_idx

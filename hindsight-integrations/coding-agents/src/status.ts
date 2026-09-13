@@ -35,7 +35,6 @@ const client = new HindsightClient({
   bank: FINAL_BANK!,
   maxParallelRetains: cfg.maxParallelRetains,
   observationScopes: cfg.observationScopes,
-  observationScopesParam: cfg.observationScopesParam,
 });
 
 syncStatus(client, FINAL_BANK!, REPO)

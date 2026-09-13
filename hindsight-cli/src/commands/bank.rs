@@ -800,6 +800,7 @@ pub fn set_config(
     retain_chunk_size: Option<i64>,
     retain_structured_chunk_size: Option<i64>,
     observations_mission: Option<String>,
+    observation_scope_tag_key_whitelist: Option<Vec<String>>,
     reflect_mission: Option<String>,
     disposition_skepticism: Option<i64>,
     disposition_literalism: Option<i64>,
@@ -862,6 +863,17 @@ pub fn set_config(
             serde_json::Value::String(mission),
         );
     }
+    if let Some(whitelist) = observation_scope_tag_key_whitelist {
+        updates.insert(
+            "observation_scope_tag_key_whitelist".to_string(),
+            serde_json::Value::Array(
+                whitelist
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
     if let Some(mission) = reflect_mission {
         updates.insert(
             "reflect_mission".to_string(),
@@ -888,7 +900,7 @@ pub fn set_config(
     }
 
     if updates.is_empty() {
-        return Err(anyhow!("No config updates provided. Use --llm-provider, --llm-model, --retain-mission, --retain-chunk-size, --observations-mission, or other flags".to_string()));
+        return Err(anyhow!("No config updates provided. Use --llm-provider, --llm-model, --retain-mission, --retain-chunk-size, --observations-mission, --observation-scope-tag-key-whitelist, or other flags".to_string()));
     }
 
     let spinner = if output_format == OutputFormat::Pretty {

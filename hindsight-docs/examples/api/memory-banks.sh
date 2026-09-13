@@ -43,6 +43,7 @@ hindsight bank set-config my-bank \
   --retain-mission "Always include technical decisions, API design choices, and architectural trade-offs. Ignore meeting logistics and social exchanges." \
   --retain-extraction-mode verbose \
   --observations-mission "Observations are stable facts about people and projects. Always include preferences, skills, and recurring patterns. Ignore one-off events." \
+  --observation-scope-tag-key-whitelist project,topic \
   --disposition-skepticism 4 \
   --disposition-literalism 4 \
   --disposition-empathy 2

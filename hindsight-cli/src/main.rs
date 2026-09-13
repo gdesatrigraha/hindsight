@@ -388,6 +388,10 @@ enum BankCommands {
         #[arg(long)]
         observations_mission: Option<String>,
 
+        /// Tag keys permitted in tagged observation scopes (pass the flag with no values for an empty whitelist)
+        #[arg(long, value_delimiter = ',', num_args = 0..)]
+        observation_scope_tag_key_whitelist: Option<Vec<String>>,
+
         /// Reflect mission: first-person identity for reflect operations
         #[arg(long)]
         reflect_mission: Option<String>,
@@ -1485,6 +1489,7 @@ fn run() -> Result<()> {
                 retain_chunk_size,
                 retain_structured_chunk_size,
                 observations_mission,
+                observation_scope_tag_key_whitelist,
                 reflect_mission,
                 disposition_skepticism,
                 disposition_literalism,
@@ -1501,6 +1506,7 @@ fn run() -> Result<()> {
                 retain_chunk_size,
                 retain_structured_chunk_size,
                 observations_mission,
+                observation_scope_tag_key_whitelist,
                 reflect_mission,
                 disposition_skepticism,
                 disposition_literalism,
@@ -2423,7 +2429,7 @@ fn handle_profile(cmd: ProfileCommands, output_format: OutputFormat) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, OperationCommands};
+    use super::{BankCommands, Cli, Commands, OperationCommands};
     use clap::Parser;
 
     #[test]
@@ -2449,6 +2455,50 @@ mod tests {
                 assert!(yes);
             }
             _ => panic!("expected operation delete command"),
+        }
+    }
+
+    #[test]
+    fn parses_observation_scope_tag_key_whitelist_values() {
+        let cli = Cli::try_parse_from([
+            "hindsight",
+            "bank",
+            "set-config",
+            "bank-1",
+            "--observation-scope-tag-key-whitelist",
+            "project,topic",
+        ])
+        .expect("observation scope whitelist should be a valid config option");
+
+        match cli.command {
+            Commands::Bank(BankCommands::SetConfig {
+                observation_scope_tag_key_whitelist,
+                ..
+            }) => assert_eq!(
+                observation_scope_tag_key_whitelist,
+                Some(vec!["project".to_string(), "topic".to_string()])
+            ),
+            _ => panic!("expected bank set-config command"),
+        }
+    }
+
+    #[test]
+    fn parses_explicitly_empty_observation_scope_tag_key_whitelist() {
+        let cli = Cli::try_parse_from([
+            "hindsight",
+            "bank",
+            "set-config",
+            "bank-1",
+            "--observation-scope-tag-key-whitelist",
+        ])
+        .expect("empty observation scope whitelist should be valid");
+
+        match cli.command {
+            Commands::Bank(BankCommands::SetConfig {
+                observation_scope_tag_key_whitelist,
+                ..
+            }) => assert_eq!(observation_scope_tag_key_whitelist, Some(vec![])),
+            _ => panic!("expected bank set-config command"),
         }
     }
 }
