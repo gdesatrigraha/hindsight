@@ -11,8 +11,8 @@ The commands below assume the repository is checked out on a branch containing t
 - Git.
 - For the recommended API path: Docker with at least 8 GB of free memory.
 - For a direct source run: Python 3.11 and [`uv`](https://docs.astral.sh/uv/).
-- For coding-agent integration: Node.js 24 LTS is recommended. Devin CLI needs Node 22.5 or newer,
-  and DeepSeek Harness session import needs Node 22.15 or newer.
+- For the Control Plane and coding-agent integration: Node.js 24 LTS is recommended. Devin CLI
+  needs Node 22.5 or newer, and DeepSeek Harness session import needs Node 22.15 or newer.
 - An API key for the configured LLM provider. The examples use OpenAI.
 
 Never commit API keys. Export them only in the shell that starts Hindsight:
@@ -139,7 +139,42 @@ For automatic reloads while editing server code, use:
 ./scripts/dev/start-api.sh --reload
 ```
 
-## 3. Smoke-test the bank policy
+## 3. Run and configure the Control Plane
+
+The recommended Docker image above contains only the API. Run the Control Plane separately from
+this checkout so that it includes the whitelist editor added by this feature.
+
+From the repository root, install the JavaScript workspace dependencies and start the UI:
+
+```bash
+npm ci
+./scripts/dev/start-control-plane.sh
+```
+
+The startup script builds the local TypeScript client before starting the Control Plane. By default,
+the UI listens on `http://localhost:9999` and connects to the API at `http://localhost:8888`. To use
+a different API URL, set `HINDSIGHT_CP_DATAPLANE_API_URL` before starting it.
+
+Open `http://localhost:9999`, then:
+
+1. Create or select the memory bank whose observation policy you want to configure. For the API
+   smoke test below, use `whitelist-demo`. For the coding-agent example later in this guide, use
+   `shared-engineering-bank`; configuration is isolated per bank.
+2. Open **Bank Configuration** and find the **Observations** section.
+3. Under **Observation Scope Tag-Key Whitelist**, choose **Custom**.
+4. Add each permitted tag key, such as `project` and `user`, then save the Observations section.
+
+The editor preserves all three policy states:
+
+- **Server Default** leaves the bank override unset and preserves legacy or inherited behavior.
+- **Custom** with no keys saves an explicit empty list, so no tagged observation dimensions are
+  permitted and preset strategies use the shared scope `[[]]`.
+- **Custom** with keys permits only those tag keys to participate in tagged observation scopes.
+
+This setting filters observation scopes only. It does not remove provenance or other tags from
+stored facts.
+
+## 4. Smoke-test the bank policy
 
 Create the bank and configure which tag keys may participate in observation scopes:
 
@@ -180,7 +215,7 @@ A successful response confirms that Retain uses the bank policy without needing 
 Verifying generated observation scopes requires consolidation to run and is not immediate; inspect
 the bank through the API or Control Plane after the retained facts have been consolidated.
 
-## 4. Build and install the coding-agent integration
+## 5. Build and install the coding-agent integration
 
 The published command
 `npx @vectorize-io/hindsight-coding-agents ...` may install the official package rather than this
@@ -235,7 +270,7 @@ A bare `install` intentionally changes nothing. The installer copies this checko
 to `~/.hindsight/coding-agents`, so installed hooks do not depend on the repository remaining at its
 current path.
 
-## 5. Configure observation scopes for coding agents
+## 6. Configure observation scopes for coding agents
 
 The default configuration file is:
 
@@ -268,7 +303,7 @@ the bank policy is unset.
 Hook-based harnesses read the new configuration on their next prompt. Restart persistent plugin
 harnesses, and start a new session for MCP-backed tools, after changing the configuration.
 
-## 6. Update or uninstall the integration
+## 7. Update or uninstall the integration
 
 After pulling a newer version of this branch, rebuild and rerun the same install command. Installation
 is idempotent and recopies the runtime in place:
