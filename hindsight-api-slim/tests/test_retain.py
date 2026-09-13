@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from hindsight_api import RequestContext
 from hindsight_api.engine.memory_engine import Budget, MemoryEngine
 from tests.llm_judge import assert_meets_criteria
 
@@ -3011,76 +3010,24 @@ def test_retain_request_per_item_strategy_field():
     logger.info("✓ per-item strategy grouping works correctly")
 
 
-def test_retain_request_accepts_observation_scope_whitelist():
-    from hindsight_api.api.http import RetainRequest
-
-    request = RetainRequest.model_validate(
-        {
-            "items": [
-                {
-                    "content": "Project work",
-                    "observation_scopes": "all_combinations",
-                    "observation_scopes_param": {"tag_key_whitelist": ["project", "user"]},
-                }
-            ]
-        }
-    )
-
-    assert request.items[0].observation_scopes_param is not None
-    assert request.items[0].observation_scopes_param.tag_key_whitelist == ["project", "user"]
-
-
-def test_retain_request_rejects_whitelist_with_explicit_scopes():
-    from pydantic import ValidationError
-
-    from hindsight_api.api.http import RetainRequest
-
-    with pytest.raises(ValidationError, match="explicit observation_scopes"):
-        RetainRequest.model_validate(
-            {
-                "items": [
-                    {
-                        "content": "Project work",
-                        "observation_scopes": [["project:foo"]],
-                        "observation_scopes_param": {"tag_key_whitelist": ["project"]},
-                    }
-                ]
-            }
-        )
-
-
-def test_retain_request_allows_explicit_scopes_with_empty_parameters():
-    from hindsight_api.api.http import RetainRequest
-
-    request = RetainRequest.model_validate(
-        {
-            "items": [
-                {
-                    "content": "Project work",
-                    "observation_scopes": [["project:foo"]],
-                    "observation_scopes_param": {},
-                }
-            ]
-        }
-    )
-
-    assert request.items[0].observation_scopes == [["project:foo"]]
-
-
 @pytest.mark.asyncio
 async def test_observation_scope_whitelist_preserves_stored_fact_tags(memory, request_context):
     bank_id = f"test-observation-scope-tags-{uuid.uuid4().hex[:8]}"
-    tags = ["project:example", "source:chat", "harness:codex"]
+    tags = ["project:project-a", "topic:authentication", "source:chat", "harness:codex"]
 
     try:
+        await memory.update_bank_config(
+            bank_id,
+            {"observation_scope_tag_key_whitelist": ["project", "topic"]},
+            request_context=request_context,
+        )
         await memory.retain_batch_async(
             bank_id=bank_id,
             contents=[
                 {
                     "content": "The deployment workflow uses canary releases.",
                     "tags": tags,
-                    "observation_scopes": "combined",
-                    "observation_scopes_param": {"tag_key_whitelist": ["project"]},
+                    "observation_scopes": "all_combinations",
                 }
             ],
             request_context=request_context,
@@ -3096,6 +3043,51 @@ async def test_observation_scope_whitelist_preserves_stored_fact_tags(memory, re
 
 
 @pytest.mark.asyncio
+async def test_bank_whitelist_accepts_allowed_custom_scope_and_rejects_prohibited_scope(memory, request_context):
+    bank_id = f"test-custom-observation-scope-{uuid.uuid4().hex[:8]}"
+    try:
+        await memory.update_bank_config(
+            bank_id,
+            {"observation_scope_tag_key_whitelist": ["project", "topic"]},
+            request_context=request_context,
+        )
+
+        await memory.retain_batch_async(
+            bank_id,
+            [{"content": "Allowed", "observation_scopes": [["project:atlas", "topic:auth"], []]}],
+            request_context=request_context,
+        )
+
+        with pytest.raises(ValueError, match="not permitted"):
+            await memory.retain_batch_async(
+                bank_id,
+                [{"content": "Rejected", "observation_scopes": [["project:atlas", "source:chat"]]}],
+                request_context=request_context,
+            )
+    finally:
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
+async def test_manual_consolidation_cannot_bypass_bank_scope_whitelist(memory, request_context):
+    bank_id = f"test-manual-observation-scope-{uuid.uuid4().hex[:8]}"
+    try:
+        await memory.update_bank_config(
+            bank_id,
+            {"observation_scope_tag_key_whitelist": ["project"]},
+            request_context=request_context,
+        )
+        with pytest.raises(ValueError, match="not permitted"):
+            await memory.submit_async_consolidation(
+                bank_id,
+                request_context=request_context,
+                observation_scopes=[["source:chat"]],
+            )
+    finally:
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
 async def test_named_strategy_applied_end_to_end(memory, request_context):
     """
     Integration test: a named strategy stored in bank config is actually applied
@@ -3105,7 +3097,6 @@ async def test_named_strategy_applied_end_to_end(memory, request_context):
     but the extraction mode override was silently ignored, always using the bank
     default (e.g. 'concise') instead of the strategy's override (e.g. 'chunks').
     """
-    from hindsight_api.config_resolver import ConfigResolver
 
     bank_id = f"test_strategy_e2e_{datetime.now(timezone.utc).timestamp()}"
 
@@ -3330,8 +3321,8 @@ from unittest.mock import patch
 
 import pytest_asyncio
 
-from hindsight_api.engine.response_models import TokenUsage
 from hindsight_api.engine.memory_engine import MemoryEngine
+from hindsight_api.engine.response_models import TokenUsage
 from hindsight_api.engine.task_backend import SyncTaskBackend
 
 

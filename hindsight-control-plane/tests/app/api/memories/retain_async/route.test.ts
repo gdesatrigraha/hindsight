@@ -30,14 +30,13 @@ describe("POST /api/memories/retain_async", () => {
     retainMemories.mockResolvedValue({ data: { message: "queued" }, error: undefined });
   });
 
-  it("maps top-level observation settings into items, including an empty whitelist", async () => {
+  it("maps a top-level observation strategy into items", async () => {
     const request = new Request("http://localhost/api/memories/retain_async", {
       method: "POST",
       body: JSON.stringify({
         bank_id: "bank-1",
         items: [{ content: "fact" }],
         observation_scopes: "combined",
-        observation_scopes_param: { tag_key_whitelist: [] },
       }),
       headers: { "content-type": "application/json" },
     });
@@ -49,7 +48,6 @@ describe("POST /api/memories/retain_async", () => {
         {
           content: "fact",
           observation_scopes: "combined",
-          observation_scopes_param: { tag_key_whitelist: [] },
         },
       ],
       async: true,
@@ -65,11 +63,9 @@ describe("POST /api/memories/retain_async", () => {
           {
             content: "fact",
             observation_scopes: "per_tag",
-            observation_scopes_param: { tag_key_whitelist: ["user"] },
           },
         ],
         observation_scopes: "combined",
-        observation_scopes_param: { tag_key_whitelist: ["project"] },
       }),
       headers: { "content-type": "application/json" },
     });
@@ -80,7 +76,6 @@ describe("POST /api/memories/retain_async", () => {
       {
         content: "fact",
         observation_scopes: "per_tag",
-        observation_scopes_param: { tag_key_whitelist: ["user"] },
       },
     ]);
   });

@@ -515,6 +515,12 @@ export type BankTemplateConfig = {
    */
   observations_mission?: string | null;
   /**
+   * Observation Scope Tag Key Whitelist
+   *
+   * Tag keys permitted to participate in tagged observation scopes. Fact tags are preserved; an empty list permits only the shared scope.
+   */
+  observation_scope_tag_key_whitelist?: Array<string> | null;
+  /**
    * Enable Temporal Retrieval
    *
    * Toggle the temporal arm (and its date-aware query analysis) during recall
@@ -1219,6 +1225,12 @@ export type CreateBankRequest = {
    * Controls what gets synthesised into observations. Replaces built-in consolidation rules entirely.
    */
   observations_mission?: string | null;
+  /**
+   * Observation Scope Tag Key Whitelist
+   *
+   * Tag keys permitted to participate in tagged observation scopes. Fact tags are preserved; an empty list permits only the shared scope.
+   */
+  observation_scope_tag_key_whitelist?: Array<string> | null;
   /**
    * Enable Temporal Retrieval
    *
@@ -3043,10 +3055,6 @@ export type MemoryItem = {
     | Array<Array<string>>
     | null;
   /**
-   * Optional parameters for observation scope generation. tag_key_whitelist selects which tag keys participate in the configured observation_scopes strategy. A configured tag_key_whitelist cannot be combined with explicit observation scope lists.
-   */
-  observation_scopes_param?: ObservationScopesParam | null;
-  /**
    * Strategy
    *
    * Named retain strategy for this item. Overrides the bank's default strategy for this item only. Strategies are defined in the bank config under 'retain_strategies'.
@@ -3895,20 +3903,6 @@ export type ObservationScope = {
    * Number of observations that live under this scope
    */
   count: number;
-};
-
-/**
- * ObservationScopesParam
- *
- * Optional parameters that control how retain tags feed observation scopes.
- */
-export type ObservationScopesParam = {
-  /**
-   * Tag Key Whitelist
-   *
-   * Only tags whose key is listed here participate in observation scope generation.
-   */
-  tag_key_whitelist?: Array<string> | null;
 };
 
 /**

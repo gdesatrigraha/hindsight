@@ -128,7 +128,6 @@ hindsight_client_api/models/model_not.py
 hindsight_client_api/models/not1.py
 hindsight_client_api/models/observation_scope.py
 hindsight_client_api/models/observation_scopes.py
-hindsight_client_api/models/observation_scopes_param.py
 hindsight_client_api/models/observation_scopes_response.py
 hindsight_client_api/models/operation_progress.py
 hindsight_client_api/models/operation_response.py

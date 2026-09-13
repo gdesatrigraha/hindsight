@@ -6,7 +6,6 @@ import { respondWithSdk } from "@/lib/sdk-response";
 type RetainItem = {
   content: string;
   observation_scopes?: "per_tag" | "combined" | "all_combinations" | "shared" | string[][];
-  observation_scopes_param?: { tag_key_whitelist?: string[] };
   [key: string]: unknown;
 };
 
@@ -35,17 +34,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { items, observation_scopes, observation_scopes_param } = body;
+  const { items, observation_scopes } = body;
 
   // The async endpoint uses the generated SDK directly, so mirror the synchronous proxy's
-  // top-level defaults here. Nullish coalescing preserves explicit empty lists and lets item-level
-  // settings take precedence without duplicating observation-scope generation in the proxy.
+  // top-level default here. Item-level settings take precedence.
   const mappedItems =
-    observation_scopes !== undefined || observation_scopes_param !== undefined
+    observation_scopes !== undefined
       ? items?.map((item: RetainItem) => ({
           ...item,
           observation_scopes: item.observation_scopes ?? observation_scopes,
-          observation_scopes_param: item.observation_scopes_param ?? observation_scopes_param,
         }))
       : items;
 

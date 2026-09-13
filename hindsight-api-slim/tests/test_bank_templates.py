@@ -659,6 +659,58 @@ class TestDefaultBankTemplateEnvVar:
         yield default_template
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("queued", [False, True])
+    async def test_default_template_whitelist_rejects_custom_scope_before_lazy_bank_creation(
+        self,
+        memory,
+        bank_id,
+        monkeypatch,
+        queued,
+    ):
+        """First-retain validation projects policy from the default template."""
+        from hindsight_api.config import _get_raw_config
+
+        raw = _get_raw_config()
+        monkeypatch.setattr(
+            raw,
+            "default_bank_template",
+            {
+                "version": "1",
+                "bank": {"observation_scope_tag_key_whitelist": ["project"]},
+            },
+        )
+        contents = [
+            {
+                "content": "A first memory for a lazily-created bank",
+                "observation_scopes": [["source:chat"]],
+            }
+        ]
+        request_context = RequestContext()
+
+        with pytest.raises(ValueError, match="source"):
+            if queued:
+                await memory.submit_async_retain(
+                    bank_id,
+                    contents,
+                    request_context=request_context,
+                )
+            else:
+                await memory.retain_batch_async(
+                    bank_id,
+                    contents,
+                    request_context=request_context,
+                )
+
+        assert (
+            await memory.get_bank_profile(
+                bank_id,
+                request_context=request_context,
+                create_if_missing=False,
+            )
+            is None
+        )
+
+    @pytest.mark.asyncio
     async def test_default_template_applied_on_new_bank(self, api_client, bank_id, _patched_default_template):
         """Creating a new bank applies the default template (config + mental models + directives)."""
         # Trigger bank auto-creation via GET profile

@@ -532,14 +532,12 @@ export class ControlPlaneClient {
       entities?: Array<{ text: string; type?: string }>;
       tags?: string[];
       observation_scopes?: "per_tag" | "combined" | "all_combinations" | "shared" | string[][];
-      observation_scopes_param?: { tag_key_whitelist?: string[] };
       strategy?: string;
     }>;
     document_id?: string;
     async?: boolean;
     /** Defaults applied to items that do not provide their own observation settings. */
     observation_scopes?: "per_tag" | "combined" | "all_combinations" | "shared" | string[][];
-    observation_scopes_param?: { tag_key_whitelist?: string[] };
   }) {
     const endpoint = params.async ? "/api/memories/retain_async" : "/api/memories/retain";
     return this.fetchApi<{ message?: string }>(endpoint, {

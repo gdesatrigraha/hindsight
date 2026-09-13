@@ -7639,6 +7639,21 @@
             "title": "Observations Mission",
             "description": "Controls what gets synthesised"
           },
+          "observation_scope_tag_key_whitelist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Scope Tag Key Whitelist",
+            "description": "Tag keys permitted to participate in tagged observation scopes. Fact tags are preserved; an empty list permits only the shared scope."
+          },
           "enable_temporal_retrieval": {
             "anyOf": [
               {
@@ -8834,6 +8849,21 @@
             ],
             "title": "Observations Mission",
             "description": "Controls what gets synthesised into observations. Replaces built-in consolidation rules entirely."
+          },
+          "observation_scope_tag_key_whitelist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Scope Tag Key Whitelist",
+            "description": "Tag keys permitted to participate in tagged observation scopes. Fact tags are preserved; an empty list permits only the shared scope."
           },
           "enable_temporal_retrieval": {
             "anyOf": [
@@ -11781,17 +11811,6 @@
             "title": "ObservationScopes",
             "description": "How to scope observations during consolidation. 'per_tag' runs one consolidation pass per individual tag, creating separate observations for each tag. 'combined' (default) runs a single pass with all tags together. 'shared' runs a single pass over one global, untagged scope, so memories consolidate together regardless of their tags \u2014 useful for deduplicating across volatile per-call provenance tags (e.g. per-session ids) while keeping those tags on the source facts. A list of tag lists runs one pass per inner list, giving full control over which combinations to use."
           },
-          "observation_scopes_param": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ObservationScopesParam"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional parameters for observation scope generation. tag_key_whitelist selects which tag keys participate in the configured observation_scopes strategy. A configured tag_key_whitelist cannot be combined with explicit observation scope lists."
-          },
           "strategy": {
             "anyOf": [
               {
@@ -13145,28 +13164,6 @@
         ],
         "title": "ObservationScope",
         "description": "A distinct observation scope: an exact tag set plus its observation count."
-      },
-      "ObservationScopesParam": {
-        "properties": {
-          "tag_key_whitelist": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tag Key Whitelist",
-            "description": "Only tags whose key is listed here participate in observation scope generation."
-          }
-        },
-        "type": "object",
-        "title": "ObservationScopesParam",
-        "description": "Optional parameters that control how retain tags feed observation scopes."
       },
       "ObservationScopesResponse": {
         "properties": {

@@ -137,6 +137,20 @@ def normalize_config_dict(config: dict[str, Any]) -> dict[str, Any]:
     return {normalize_config_key(k): v for k, v in config.items()}
 
 
+def _parse_optional_string_list_json(value: str | None) -> list[str] | None:
+    """Parse an optional JSON string list without collapsing a meaningful empty list."""
+    if value is None or not value.strip():
+        return None
+    parsed = json.loads(value)
+    if parsed is None:
+        return None
+    if not isinstance(parsed, list) or any(
+        not isinstance(item, str) or not item.strip() or ":" in item for item in parsed
+    ):
+        raise ValueError("expected a JSON array of non-empty tag keys without ':'")
+    return parsed
+
+
 # Environment variable names
 ENV_DATABASE_BACKEND = "HINDSIGHT_API_DATABASE_BACKEND"
 ENV_DATABASE_URL = "HINDSIGHT_API_DATABASE_URL"
@@ -681,6 +695,7 @@ ENV_CONSOLIDATION_MAX_ATTEMPTS = "HINDSIGHT_API_CONSOLIDATION_MAX_ATTEMPTS"
 ENV_OBSERVATIONS_MISSION = "HINDSIGHT_API_OBSERVATIONS_MISSION"
 ENV_MAX_OBSERVATIONS_PER_SCOPE = "HINDSIGHT_API_MAX_OBSERVATIONS_PER_SCOPE"
 ENV_OBSERVATION_SCOPE_LIMITS = "HINDSIGHT_API_OBSERVATION_SCOPE_LIMITS"
+ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST = "HINDSIGHT_API_OBSERVATION_SCOPE_TAG_KEY_WHITELIST"
 ENV_ENABLE_OBSERVATION_HISTORY = "HINDSIGHT_API_ENABLE_OBSERVATION_HISTORY"
 ENV_OBSERVATION_HISTORY_MAX_ENTRIES = "HINDSIGHT_API_OBSERVATION_HISTORY_MAX_ENTRIES"
 ENV_ENABLE_MENTAL_MODEL_HISTORY = "HINDSIGHT_API_ENABLE_MENTAL_MODEL_HISTORY"
@@ -1329,6 +1344,9 @@ DEFAULT_MAX_OBSERVATIONS_PER_SCOPE = -1  # Max observations per tag scope (-1 = 
 # Per-scope overrides of the cap above: list of {"scope": [tag-globs], "limit": int}.
 # First rule whose pattern exact-covers a scope's tags wins; else the default above.
 DEFAULT_OBSERVATION_SCOPE_LIMITS: list | None = None
+# None preserves legacy behavior (all fact tags are eligible); an explicit empty
+# list is meaningful and routes preset strategies to the shared scope.
+DEFAULT_OBSERVATION_SCOPE_TAG_KEY_WHITELIST: list[str] | None = None
 
 # Database migrations
 DEFAULT_RUN_MIGRATIONS_ON_STARTUP = True
@@ -2620,6 +2638,9 @@ class HindsightConfig:
     # Raw JSON shape: [{"scope": ["run_*", "shared"], "limit": 1}, ...]
     # (validated/applied in engine.consolidation.consolidator._effective_scope_limit)
     observation_scope_limits: list | None
+    # Tag dimensions allowed to form observation scopes. This never removes tags
+    # from source facts; it only limits consolidation routing.
+    observation_scope_tag_key_whitelist: list[str] | None
 
     # Entity labels (controlled vocabulary of key:value classification labels extracted at retain time)
     # List of label group dicts: [{key, description, type, optional, values: [{value, description}]}]
@@ -2916,6 +2937,7 @@ class HindsightConfig:
         "observations_mission",
         "max_observations_per_scope",
         "observation_scope_limits",
+        "observation_scope_tag_key_whitelist",
         # Mental model settings
         "mental_model_min_refresh_interval_seconds",
         # Reflect settings
@@ -3965,6 +3987,11 @@ class HindsightConfig:
             ),
             observation_scope_limits=json.loads(os.getenv(ENV_OBSERVATION_SCOPE_LIMITS, "null"))
             or DEFAULT_OBSERVATION_SCOPE_LIMITS,
+            # Do not use ``or DEFAULT`` here: [] deliberately means that this
+            # bank permits no tagged observation dimensions.
+            observation_scope_tag_key_whitelist=_parse_optional_string_list_json(
+                os.getenv(ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST)
+            ),
             entity_labels=None,
             entities_allow_free_form=True,
             memory_defense=None,

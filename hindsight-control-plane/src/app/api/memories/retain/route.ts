@@ -17,17 +17,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { items, document_id, document_tags, observation_scopes, observation_scopes_param } =
-      body;
+    const { items, document_id, document_tags, observation_scopes } = body;
 
-    // Map top-level observation settings into each item when provided. Item-level settings win,
-    // and an explicitly empty whitelist must be preserved rather than treated as absent.
+    // Map the top-level observation strategy into each item when provided. Item-level settings win.
     const mappedItems =
-      observation_scopes !== undefined || observation_scopes_param !== undefined
+      observation_scopes !== undefined
         ? items?.map((item: any) => ({
             ...item,
             observation_scopes: item.observation_scopes ?? observation_scopes,
-            observation_scopes_param: item.observation_scopes_param ?? observation_scopes_param,
           }))
         : items;
 

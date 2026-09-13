@@ -21,14 +21,13 @@ describe("POST /api/memories/retain", () => {
     retainBatch.mockResolvedValue({ success: true });
   });
 
-  it("maps top-level observation settings into items, including an empty whitelist", async () => {
+  it("maps a top-level observation strategy into items", async () => {
     const request = new Request("http://localhost/api/memories/retain", {
       method: "POST",
       body: JSON.stringify({
         bank_id: "bank-1",
         items: [{ content: "fact" }],
         observation_scopes: "combined",
-        observation_scopes_param: { tag_key_whitelist: [] },
       }),
       headers: { "content-type": "application/json" },
     });
@@ -41,7 +40,6 @@ describe("POST /api/memories/retain", () => {
         {
           content: "fact",
           observation_scopes: "combined",
-          observation_scopes_param: { tag_key_whitelist: [] },
         },
       ],
       { documentId: undefined, documentTags: undefined }
@@ -57,11 +55,9 @@ describe("POST /api/memories/retain", () => {
           {
             content: "fact",
             observation_scopes: "per_tag",
-            observation_scopes_param: { tag_key_whitelist: ["user"] },
           },
         ],
         observation_scopes: "combined",
-        observation_scopes_param: { tag_key_whitelist: ["project"] },
       }),
       headers: { "content-type": "application/json" },
     });
@@ -72,7 +68,6 @@ describe("POST /api/memories/retain", () => {
       {
         content: "fact",
         observation_scopes: "per_tag",
-        observation_scopes_param: { tag_key_whitelist: ["user"] },
       },
     ]);
   });

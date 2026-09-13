@@ -5224,6 +5224,11 @@ components:
         observations_mission:
           nullable: true
           type: string
+        observation_scope_tag_key_whitelist:
+          items:
+            type: string
+          nullable: true
+          type: array
         enable_temporal_retrieval:
           nullable: true
           type: boolean
@@ -5785,6 +5790,11 @@ components:
         observations_mission:
           nullable: true
           type: string
+        observation_scope_tag_key_whitelist:
+          items:
+            type: string
+          nullable: true
+          type: array
         enable_temporal_retrieval:
           nullable: true
           type: boolean
@@ -8054,8 +8064,6 @@ components:
           type: array
         observation_scopes:
           $ref: '#/components/schemas/ObservationScopes'
-        observation_scopes_param:
-          $ref: '#/components/schemas/ObservationScopesParam'
         strategy:
           nullable: true
           type: string
@@ -8971,16 +8979,6 @@ components:
       - count
       - tags
       title: ObservationScope
-    ObservationScopesParam:
-      description: Optional parameters that control how retain tags feed observation
-        scopes.
-      properties:
-        tag_key_whitelist:
-          items:
-            type: string
-          nullable: true
-          type: array
-      title: ObservationScopesParam
     ObservationScopesResponse:
       description: Response model for the observation scopes enumeration endpoint.
       example:

@@ -1,8 +1,8 @@
 # Run the observation-scope whitelist build
 
 This guide runs the Hindsight API and coding-agent integration from this repository checkout. Do
-not use the published Hindsight container or the published coding-agent package for this feature:
-those artifacts may not contain `observation_scopes_param.tag_key_whitelist` yet.
+not use the published Hindsight container or clients for this feature: those artifacts may not
+contain the bank-level `observation_scope_tag_key_whitelist` policy yet.
 
 The commands below assume the repository is checked out on a branch containing this feature.
 
@@ -139,10 +139,23 @@ For automatic reloads while editing server code, use:
 ./scripts/dev/start-api.sh --reload
 ```
 
-## 3. Smoke-test the whitelist request
+## 3. Smoke-test the bank policy
 
-This request retains all four tags on extracted facts, while only `project:*` and `user:*` tags are
-eligible for the existing `combined` observation strategy:
+Create the bank and configure which tag keys may participate in observation scopes:
+
+```bash
+curl --fail-with-body \
+  --request PUT \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "Whitelist demo",
+    "observation_scope_tag_key_whitelist": ["project", "user"]
+  }' \
+  http://localhost:8888/v1/default/banks/whitelist-demo
+```
+
+The retain request uses the ordinary observation strategy. It stores all four tags on extracted
+facts, while only `project:*` and `user:*` tags are eligible for `combined`:
 
 ```bash
 curl --fail-with-body \
@@ -153,10 +166,7 @@ curl --fail-with-body \
       {
         "content": "The deployment workflow uses canary releases.",
         "tags": ["project:example", "user:developer", "source:chat", "harness:codex"],
-        "observation_scopes": "combined",
-        "observation_scopes_param": {
-          "tag_key_whitelist": ["project", "user"]
-        }
+        "observation_scopes": "combined"
       }
     ]
   }' \
@@ -166,9 +176,9 @@ curl --fail-with-body \
 An explicitly empty whitelist, or one that matches no fact tags, creates the concrete shared scope
 `[[]]`. It does not remove tags from the stored fact.
 
-A successful response confirms that this server accepts the new request shape. Verifying generated
-observation scopes requires consolidation to run and is not immediate; inspect the bank through the
-API or control plane after the retained facts have been consolidated.
+A successful response confirms that Retain uses the bank policy without needing to know its value.
+Verifying generated observation scopes requires consolidation to run and is not immediate; inspect
+the bank through the API or Control Plane after the retained facts have been consolidated.
 
 ## 4. Build and install the coding-agent integration
 
@@ -245,19 +255,15 @@ preserving any other settings already in the file:
   "apiUrl": "http://localhost:8888",
   "bankId": "shared-engineering-bank",
   "retainTags": ["project:{gitProject}"],
-  "observationScopes": "combined",
-  "observationScopesParam": {
-    "tagKeyWhitelist": ["project"]
-  }
+  "observationScopes": "all_combinations"
 }
 ```
 
-The coding-agent configuration uses camel case. The integration forwards it to the server as
-`observation_scopes_param.tag_key_whitelist`; it does not generate concrete scopes itself.
-
-`observationScopesParam` is file-only and cannot be set with an environment variable. It composes
-with the named `combined`, `per_tag`, `all_combinations`, and `shared` strategies. Do not combine a
-configured whitelist with an explicit custom scope list.
+The coding-agent integration sends the normal `observationScopes` strategy and its provenance tags.
+It does not independently filter tag keys and does not need to know the bank whitelist. Configure
+the policy once on `shared-engineering-bank` through the bank configuration API, CLI, or Control
+Plane. Existing `shared`, `combined`, `per_tag`, and `all_combinations` behavior is unchanged when
+the bank policy is unset.
 
 Hook-based harnesses read the new configuration on their next prompt. Restart persistent plugin
 harnesses, and start a new session for MCP-backed tools, after changing the configuration.

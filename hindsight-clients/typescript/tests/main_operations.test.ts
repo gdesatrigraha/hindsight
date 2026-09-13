@@ -541,57 +541,6 @@ const canSpyOnModules = typeof (globalThis as any).Deno === "undefined";
     spy.mockRestore();
   });
 
-  test("retain forwards observation scope tag-key whitelist", async () => {
-    const spy = jest.spyOn(sdk, "retainMemories").mockResolvedValue({
-      data: { success: true, items_count: 1 },
-    } as any);
-
-    await client.retain(randomBankId(), "project fact", {
-      observationScopes: "combined",
-      observationScopesParam: { tagKeyWhitelist: ["project"] },
-    });
-
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({
-          items: [
-            expect.objectContaining({
-              observation_scopes: "combined",
-              observation_scopes_param: { tag_key_whitelist: ["project"] },
-            }),
-          ],
-        }),
-      })
-    );
-    spy.mockRestore();
-  });
-
-  test("retainBatch serializes item-level observation scope parameters", async () => {
-    const spy = jest.spyOn(sdk, "retainMemories").mockResolvedValue({
-      data: { success: true, items_count: 1 },
-    } as any);
-
-    await client.retainBatch(randomBankId(), [
-      {
-        content: "project fact",
-        observation_scopes_param: { tag_key_whitelist: ["project", "user"] },
-      },
-    ]);
-
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({
-          items: [
-            expect.objectContaining({
-              observation_scopes_param: { tag_key_whitelist: ["project", "user"] },
-            }),
-          ],
-        }),
-      })
-    );
-    spy.mockRestore();
-  });
-
   test("retain omits operationId from default, sync, and nullish delegation", async () => {
     const spy = jest.spyOn(client, "retainBatch").mockResolvedValue({
       success: true,
@@ -659,6 +608,42 @@ const canSpyOnModules = typeof (globalThis as any).Deno === "undefined";
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
     sdkSpy.mockRestore();
+  });
+});
+
+(canSpyOnModules ? describe : describe.skip)("TestObservationWhitelistBankConfig", () => {
+  test("createBank preserves an explicitly empty whitelist", async () => {
+    const spy = jest.spyOn(sdk, "createOrUpdateBank").mockResolvedValue({
+      data: { bank_id: "bank" },
+    } as any);
+
+    await client.createBank("bank", {
+      observationScopeTagKeyWhitelist: [],
+    });
+
+    expect((spy.mock.calls[0][0] as any).body.observation_scope_tag_key_whitelist).toEqual([]);
+    spy.mockRestore();
+  });
+
+  test.each([
+    { value: undefined, expected: undefined },
+    { value: null, expected: null },
+    { value: [] as string[], expected: [] },
+    { value: ["project", "topic"], expected: ["project", "topic"] },
+  ])("updateBankConfig serializes $value distinctly", async ({ value, expected }) => {
+    const spy = jest.spyOn(sdk, "updateBankConfig").mockResolvedValue({
+      data: { bank_id: "bank", config: {}, overrides: {} },
+    } as any);
+
+    await client.updateBankConfig("bank", { observationScopeTagKeyWhitelist: value });
+
+    const request = spy.mock.calls[0][0] as any;
+    if (value === undefined) {
+      expect(request.body.updates).not.toHaveProperty("observation_scope_tag_key_whitelist");
+    } else {
+      expect(request.body.updates.observation_scope_tag_key_whitelist).toEqual(expected);
+    }
+    spy.mockRestore();
   });
 });
 

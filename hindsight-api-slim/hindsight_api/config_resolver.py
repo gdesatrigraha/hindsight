@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# These settings are configurable at the bank level but are not per-retain
+# behavior. Letting a named retain strategy override the whitelist would restore
+# the client-specific policy this field is intended to replace.
+_RETAIN_STRATEGY_EXCLUDED_FIELDS = frozenset({"observation_scope_tag_key_whitelist"})
+
+
 class BankConfigPersistenceConflictError(ValueError):
     """Raised when a validated bank config update can no longer be persisted."""
 
@@ -88,7 +94,9 @@ def _validate_retain_strategy_chunking(base_config: HindsightConfig, strategies:
     for strategy_name, overrides in strategies.items():
         if not isinstance(overrides, dict):
             raise ValueError(f"Invalid retain strategy {strategy_name!r}: must be an object")
-        filtered = {k: v for k, v in overrides.items() if k in configurable}
+        filtered = {
+            k: v for k, v in overrides.items() if k in configurable and k not in _RETAIN_STRATEGY_EXCLUDED_FIELDS
+        }
         if not filtered:
             continue
         try:
@@ -492,6 +500,13 @@ class ConfigResolver:
         # instead of tripping a structural validator with a confusing message.
         _validate_config_value_types(normalized_updates)
 
+        if "observation_scope_tag_key_whitelist" in normalized_updates:
+            whitelist = normalized_updates["observation_scope_tag_key_whitelist"]
+            if whitelist is not None and any(
+                not isinstance(key, str) or not key.strip() or ":" in key for key in whitelist
+            ):
+                raise ValueError("observation_scope_tag_key_whitelist must contain non-empty tag keys without ':'")
+
         # Validate entity_labels structure
         if "entity_labels" in normalized_updates and normalized_updates["entity_labels"] is not None:
             from .engine.retain.entity_labels import parse_entity_labels
@@ -514,6 +529,12 @@ class ConfigResolver:
             for strategy_name, strategy_overrides in normalized_updates["retain_strategies"].items():
                 if not isinstance(strategy_overrides, dict):
                     raise ValueError(f"Invalid retain strategy {strategy_name!r}: must be an object")
+                forbidden = set(normalize_config_dict(strategy_overrides)) & _RETAIN_STRATEGY_EXCLUDED_FIELDS
+                if forbidden:
+                    raise ValueError(
+                        f"Invalid retain strategy {strategy_name!r}: bank policy fields cannot be overridden: "
+                        f"{sorted(forbidden)}"
+                    )
                 try:
                     _validate_config_value_types(normalize_config_dict(strategy_overrides))
                 except ValueError as e:
@@ -881,7 +902,7 @@ def apply_strategy(config: HindsightConfig, strategy_name: str) -> HindsightConf
         return config
 
     configurable = HindsightConfig.get_configurable_fields()
-    filtered = {k: v for k, v in overrides.items() if k in configurable}
+    filtered = {k: v for k, v in overrides.items() if k in configurable and k not in _RETAIN_STRATEGY_EXCLUDED_FIELDS}
 
     if not filtered:
         return config

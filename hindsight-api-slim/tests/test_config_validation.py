@@ -126,6 +126,33 @@ def test_retain_structured_chunk_size_reads_from_env():
     assert config.retain_structured_chunk_size == 9000
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, None), ("", None), ("null", None), ("[]", []), ('["project", "topic"]', ["project", "topic"])],
+)
+def test_observation_scope_whitelist_env_preserves_unset_and_empty(monkeypatch, raw, expected):
+    from hindsight_api.config import ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST, HindsightConfig
+
+    if raw is None:
+        monkeypatch.delenv(ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST, raising=False)
+    else:
+        monkeypatch.setenv(ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST, raw)
+    monkeypatch.setenv("HINDSIGHT_API_LLM_PROVIDER", "mock")
+
+    assert HindsightConfig.from_env().observation_scope_tag_key_whitelist == expected
+
+
+@pytest.mark.parametrize("raw", ['{"project": true}', "[1]", '[""]', '["project:bad"]'])
+def test_observation_scope_whitelist_env_rejects_invalid_tag_keys(monkeypatch, raw):
+    from hindsight_api.config import ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST, HindsightConfig
+
+    monkeypatch.setenv(ENV_OBSERVATION_SCOPE_TAG_KEY_WHITELIST, raw)
+    monkeypatch.setenv("HINDSIGHT_API_LLM_PROVIDER", "mock")
+
+    with pytest.raises(ValueError, match="JSON array of non-empty tag keys"):
+        HindsightConfig.from_env()
+
+
 def test_fail_on_extraction_errors_defaults_to_false(monkeypatch):
     """Silent-success behavior is preserved by default (issue #2700)."""
     from hindsight_api.config import ENV_FAIL_ON_EXTRACTION_ERRORS, HindsightConfig

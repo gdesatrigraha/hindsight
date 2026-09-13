@@ -34,6 +34,7 @@ type CreateBankRequest struct {
 	RetainStructuredChunkSize NullableInt32 `json:"retain_structured_chunk_size,omitempty"`
 	EnableObservations NullableBool `json:"enable_observations,omitempty"`
 	ObservationsMission NullableString `json:"observations_mission,omitempty"`
+	ObservationScopeTagKeyWhitelist []string `json:"observation_scope_tag_key_whitelist,omitempty"`
 	EnableTemporalRetrieval NullableBool `json:"enable_temporal_retrieval,omitempty"`
 	EnableGraphRetrieval NullableBool `json:"enable_graph_retrieval,omitempty"`
 	EnableReranking NullableBool `json:"enable_reranking,omitempty"`
@@ -686,6 +687,39 @@ func (o *CreateBankRequest) UnsetObservationsMission() {
 	o.ObservationsMission.Unset()
 }
 
+// GetObservationScopeTagKeyWhitelist returns the ObservationScopeTagKeyWhitelist field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *CreateBankRequest) GetObservationScopeTagKeyWhitelist() []string {
+	if o == nil {
+		var ret []string
+		return ret
+	}
+	return o.ObservationScopeTagKeyWhitelist
+}
+
+// GetObservationScopeTagKeyWhitelistOk returns a tuple with the ObservationScopeTagKeyWhitelist field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *CreateBankRequest) GetObservationScopeTagKeyWhitelistOk() ([]string, bool) {
+	if o == nil || IsNil(o.ObservationScopeTagKeyWhitelist) {
+		return nil, false
+	}
+	return o.ObservationScopeTagKeyWhitelist, true
+}
+
+// HasObservationScopeTagKeyWhitelist returns a boolean if a field has been set.
+func (o *CreateBankRequest) HasObservationScopeTagKeyWhitelist() bool {
+	if o != nil && !IsNil(o.ObservationScopeTagKeyWhitelist) {
+		return true
+	}
+
+	return false
+}
+
+// SetObservationScopeTagKeyWhitelist gets a reference to the given []string and assigns it to the ObservationScopeTagKeyWhitelist field.
+func (o *CreateBankRequest) SetObservationScopeTagKeyWhitelist(v []string) {
+	o.ObservationScopeTagKeyWhitelist = v
+}
+
 // GetEnableTemporalRetrieval returns the EnableTemporalRetrieval field value if set, zero value otherwise (both if not set or set to explicit null).
 func (o *CreateBankRequest) GetEnableTemporalRetrieval() bool {
 	if o == nil || IsNil(o.EnableTemporalRetrieval.Get()) {
@@ -866,6 +900,9 @@ func (o CreateBankRequest) ToMap() (map[string]interface{}, error) {
 	}
 	if o.ObservationsMission.IsSet() {
 		toSerialize["observations_mission"] = o.ObservationsMission.Get()
+	}
+	if o.ObservationScopeTagKeyWhitelist != nil {
+		toSerialize["observation_scope_tag_key_whitelist"] = o.ObservationScopeTagKeyWhitelist
 	}
 	if o.EnableTemporalRetrieval.IsSet() {
 		toSerialize["enable_temporal_retrieval"] = o.EnableTemporalRetrieval.Get()

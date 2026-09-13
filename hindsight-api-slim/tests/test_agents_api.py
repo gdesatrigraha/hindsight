@@ -108,6 +108,11 @@ class TestAgentProfile:
 class TestAgentEndpoint:
     """Tests for agent PUT endpoint logic."""
 
+    def test_create_bank_request_preserves_explicit_empty_observation_whitelist(self):
+        request = CreateBankRequest(observation_scope_tag_key_whitelist=[])
+
+        assert request.get_config_updates()["observation_scope_tag_key_whitelist"] == []
+
     @pytest.mark.asyncio
     async def test_put_agent_create(self, memory: MemoryEngine, request_context):
         """Test creating an agent via PUT endpoint."""

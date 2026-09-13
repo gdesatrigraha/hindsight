@@ -173,7 +173,7 @@ This ensures responses stay accurate even as the underlying data changes.
 
 ## Observation Scopes
 
-By default, observations are scoped to all of a memory's tags combined. The `observation_scopes` retain parameter lets you control this — building separate observations per tag, per combination, or with a custom list of scopes. When fact tags mix belief dimensions with retrieval/provenance dimensions, `observation_scopes_param.tag_key_whitelist` first limits which tag keys are eligible; the selected `observation_scopes` strategy then generates the concrete scopes. The original fact tags are not changed.
+By default, observations are scoped to all of a memory's tags combined. The `observation_scopes` retain parameter lets you control this — building separate observations per tag, per combination, or with a custom list of scopes. When fact tags mix belief dimensions with retrieval/provenance dimensions, set the bank's `observation_scope_tag_key_whitelist`: Hindsight filters eligible tags by that policy and then applies the selected strategy. The original fact tags are not changed. An empty whitelist or no matching tags produces the shared scope `[[]]`; custom scopes containing prohibited keys are rejected, including through manual consolidation. The policy affects future scope generation only and does not migrate historical observations.
 
 See [`observation_scopes` in the Retain API](./api/retain#observation_scopes) for the full explanation and options.
 
